@@ -56,7 +56,6 @@ jobs:
               raise last_error
 
           fragments = (
-              "app-project-integration.fragment.js",
               "app-runtime-specs.fragment.js",
               "app-runtime-router.fragment.js",
               "app-runtime-description.fragment.js",
