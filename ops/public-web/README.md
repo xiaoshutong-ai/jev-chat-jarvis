@@ -2,15 +2,14 @@
 
 This project repository is the canonical owner of JEV Chat Jarvis-specific fragments embedded in the shared public Operations Hub shell.
 
-Canonical fragments:
-- `app-project-integration.fragment.js`
+Canonical runtime fragments:
 - `app-runtime-specs.fragment.js`
 - `app-runtime-router.fragment.js`
 - `app-runtime-description.fragment.js`
 - `app-runtime-group-key.fragment.js`
 - `app-runtime-group-meta.fragment.js`
 
-These fragments are currently projected into `xiaoshutong-ai/mz-ph-ui/app.js`. The public shell is not the source of truth for them.
+These runtime fragments are currently projected into `xiaoshutong-ai/mz-ph-ui/app.js`. The public shell is not the source of truth for them. Project-status copy is intentionally excluded: current status must come from project evidence/status projection rather than hard-coded shell text.
 
 The repository remains a public MIT fork of `jev-chat/jev-chat-jarvis`; this ownership rule concerns the xiaoshutong-ai operations integration only and does not change upstream licensing or fork provenance.
 
