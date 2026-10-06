@@ -1,0 +1,81 @@
+name: Public Mirror Contract
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "ops/public-web/**"
+      - ".github/workflows/public-mirror-contract.yml"
+  workflow_dispatch:
+  schedule:
+    - cron: "37 3 * * *"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: public-mirror-contract-${{ github.repository }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: [self-hosted, Linux, X64, jev-chat-jarvis, wsl2]
+    timeout-minutes: 5
+    steps:
+      - name: Checkout canonical project source
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+
+      - name: Verify JEV public shell fragments
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import time
+          import urllib.error
+          import urllib.request
+
+          url = "https://raw.githubusercontent.com/xiaoshutong-ai/mz-ph-ui/main/app.js"
+          headers = {"User-Agent": "jev-chat-jarvis-public-mirror-contract"}
+
+          last_error = None
+          for attempt in range(3):
+              try:
+                  req = urllib.request.Request(url, headers=headers)
+                  with urllib.request.urlopen(req, timeout=20) as response:
+                      public = response.read().decode("utf-8").replace("\r\n", "\n").rstrip("\r\n")
+                  break
+              except (urllib.error.URLError, TimeoutError, ConnectionError) as error:
+                  last_error = error
+                  if attempt == 2:
+                      raise
+                  time.sleep(1 + attempt)
+          else:
+              raise last_error
+
+          fragments = (
+              "app-project-integration.fragment.js",
+              "app-runtime-specs.fragment.js",
+              "app-runtime-router.fragment.js",
+              "app-runtime-description.fragment.js",
+              "app-runtime-group-key.fragment.js",
+              "app-runtime-group-meta.fragment.js",
+          )
+
+          for name in fragments:
+              fragment = (
+                  Path("ops/public-web", name)
+                  .read_text(encoding="utf-8")
+                  .replace("\r\n", "\n")
+                  .rstrip("\r\n")
+              )
+              count = public.count(fragment)
+              if count != 1:
+                  raise SystemExit(
+                      f"PUBLIC_MIRROR_DRIFT: {name} occurs {count} times in app.js"
+                  )
+
+          print("JEV_PUBLIC_MIRROR=PASS")
+          PY
