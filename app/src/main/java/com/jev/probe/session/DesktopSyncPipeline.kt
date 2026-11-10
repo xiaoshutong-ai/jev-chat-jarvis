@@ -18,6 +18,7 @@ class DesktopSyncPipeline(
     ) : this(config, generate, DesktopBridgeClient(config)::pollOnce)
 
     private val coordinator = DesktopAnalysisCoordinator(generate)
+    private val ownerId = java.util.UUID.randomUUID().toString()
 
     data class Outcome(
         val accepted: Int,
@@ -43,7 +44,7 @@ class DesktopSyncPipeline(
             config.androidProfileScope, config.pairedAccountRef, batch.messages, nowMs
         )
         require(DesktopPairingState.establishAfterVerifiedPairing(
-            config.androidProfileScope, config.pairedAccountRef
+            config.androidProfileScope, config.pairedAccountRef, ownerId
         )) { "invalid Android profile" }
 
         val generated = coordinator.onAcceptedBatch(
@@ -56,8 +57,13 @@ class DesktopSyncPipeline(
     /** Does not touch other Android profiles or Windows account mappings. */
     @Synchronized fun stop() {
         coordinator.clear()
-        DesktopPairingState.revoke(config.androidProfileScope)
-        DesktopMessageIndex.clearScoped(config.androidProfileScope, config.pairedAccountRef)
-        DesktopReplyInbox.clearScoped(config.androidProfileScope, config.pairedAccountRef)
+        val revoked = DesktopPairingState.revokeIfOwned(config.androidProfileScope, ownerId)
+        val currentAccount = DesktopPairingState.accountFor(config.androidProfileScope)
+        // An old pipeline may complete after the new one has paired. Do not
+        // erase data belonging to that replacement (same account/profile).
+        if (revoked || currentAccount != config.pairedAccountRef) {
+            DesktopMessageIndex.clearScoped(config.androidProfileScope, config.pairedAccountRef)
+            DesktopReplyInbox.clearScoped(config.androidProfileScope, config.pairedAccountRef)
+        }
     }
 }
