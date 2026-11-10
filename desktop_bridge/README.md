@@ -52,6 +52,27 @@ WeFlow 本体为 CC BY-NC-SA 4.0（非商业），其本地数据库连接还可
 
 真正的 WeFlow 数据接口不在该合成测试范围；没有经用户明确指定会话与数据处理权限前，不使用真实微信聊天记录替代模拟会话。
 
+## 用户主动复制的单次文件传输助手试点（不使用数据库密钥）
+
+此模式用于先核验已经发到**独立测试微信号**「文件传输助手」的文本 `JEV_TEST_01` 的 Windows → JEV 输入链路。它不是微信自动历史同步，也不能从微信界面或数据库自动读取。
+
+1. 在 5070TI 上切到测试微信窗口，找到自己发给「文件传输助手」的 `JEV_TEST_01`，右键 **复制**。此时只是 Windows 公共剪贴板中由用户主动选择的一段内容；不要复制其他聊天。
+2. 用户回复聊天窗口 **“已复制测试消息”** 后，执行者才从 Windows 剪贴板读取一次并验证文本**严格等于** `JEV_TEST_01`；不轮询、不后台监听、不写剪贴板正文文件。
+3. JEV Relay 的 `--manual-stdin-test` 仅允许 `--account-ref fixture-account`，只在标准输入接收这段特定测试文字；消息标记为 `session_id=manual-pilot-filehelper`、`display_name=文件传输助手（手动选择）`、`direction=me`，绝不冒称官方微信 wxid/未读通知。由于是本人发送，JEV 的自动回复协调器**不得触发模型调用**。
+4. 使用随机 Bearer Token、`127.0.0.1:18766`（与本机百度输入法占用的 8766 分开）；Android 现有调试模拟器若需接入，使用 `adb reverse tcp:8766 tcp:18766` 做临时授权映射，结束时清理。
+5. 未取得调试取钥授权路径的执行回执：之前平台明确阻止一次性调试器取钥脚本，不能要求用户手动执行被拦截的命令，也不改用其他执行通道绕过。本路径只处理**用户主动提供的文字**。
+
+作为独立 CLI 的示例，以下在 PowerShell 7 的项目根目录运行（需已显式复制测试标记）：
+
+```powershell
+$env:JEV_RELAY_TOKEN = [Convert]::ToHexString([Security.Cryptography.RandomNumberGenerator]::GetBytes(32))
+Get-Clipboard -Raw | python desktop_bridge/relay.py --account-ref fixture-account --port 18766 --manual-stdin-test
+```
+
+该命令启动的是内存只读 HTTP 服务，用户或执行者可在验收后按 Ctrl+C 关闭。它不会自动向 Android 发送或调用模型，其他程序不能在缺少 Bearer Token 的情况下轮询。
+
+**2026-11-10 的实测证据**：新增测试后 Python `17/17 PASS`；5070TI 在代码 HEAD `13db678430c8f4550909873d0fc2f82b6a2ad847` 的真实本机 HTTP 测试中，将预设 `JEV_TEST_01` 通过 stdin 输入新模式，验证 `HTTP_IMPORT_COUNT=1`、`HTTP_IMPORT_DIRECTION=me`、`HTTP_IMPORT_SESSION=manual-pilot-filehelper`、未认证 GET 返回 401，`MANUAL_BRIDGE_HTTP_E2E=PASS`。**这不是从用户微信实际剪贴板复制的回执**；后一环等待用户明确复制。
+
 ## 安全与测试边界
 
 - 手机微信不请求无障碍树、截屏，也不修改微信程序。
