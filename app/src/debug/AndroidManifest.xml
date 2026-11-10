@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application>
+        <!-- Only packaged in debug; never in the release manifest. Synthetic
+             fixture data only, no connection to WeChat or accessibility APIs. -->
+        <activity
+            android:name=".debug.SyntheticChatActivity"
+            android:exported="true"
+            android:label="JEV Synthetic Chat QA"
+            android:theme="@android:style/Theme.Material.Light.NoActionBar" />
+    </application>
+</manifest>
