@@ -85,4 +85,19 @@ class DesktopMessageIndexTest {
         assertTrue(DesktopMessageIndex.conversations(scope, acct).size <= DesktopMessageIndex.MAX_SESSIONS)
         assertFalse(DesktopMessageIndex.conversations(scope, acct).any { it.sessionId == "wxid-a" })
     }
+
+    @Test fun manualUserSelectedMessageHasNoNotificationFingerprint() {
+        val session = SessionBindingResolver.USER_SELECTED_SESSION_PREFIX + "pilotABC"
+        val manual = m("manual-1", session = session, text = "相同通知正文")
+        assertEquals(1, DesktopMessageIndex.mergeTrusted(
+            scope, acct, listOf(manual), 1_001_000
+        ))
+        val conversation = DesktopMessageIndex.conversations(scope, acct).single()
+        assertEquals(session, conversation.sessionId)
+        // Manual clipboard content is a user declaration, not an
+        // authenticated notification-to-WeChat-conversation binding.
+        assertEquals(null, conversation.latestMessageFingerprint)
+        assertEquals(1_000_000L, conversation.latestMessageAtMs)
+        assertEquals("相同通知正文", DesktopMessageIndex.history(scope, acct, session).single().text)
+    }
 }
