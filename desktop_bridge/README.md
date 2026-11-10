@@ -28,11 +28,29 @@ python -m unittest discover -s desktop_bridge/tests -p 'test_*.py' -v
 
 可选的本机 USB 研发连接：`adb -s <device-serial> reverse tcp:8766 tcp:8766`，这不意味着 JEV 正式版本已支持配对。手机离开 USB 后该隧道自然失效。远程生产连接必须另行提供可信 TLS、密钥生命周期、配对撤销及明确的隐私授权。
 
-## WeFlow 兼容性边界
+## WeFlow ChatLab Pull 兼容适配（默认关闭）
 
-`--weflow-url` 只允许本机 loopback，必须显式指定 `--allow-real-chats` 和 `--chat-id` 白名单；其 API Token 仅来自环境变量。该适配器只轮询文本消息，不处理图片、语音、文件或发送。当前逻辑按每个白名单会话最近 40 条读取，并对可见窗口内的重复消息去重：**突发超过源窗口、消息撤回、历史回补均未完成可靠性验收**，不能宣传为全量或零遗漏。
+2026-11-10 已对照 WeFlow 的公开 `docs/HTTP-API.md`，JEV 改用只读
+`GET /api/v1/sessions/:id/messages`，不再用“最近 40 条”冒充增量监听：
 
-WeFlow 可能依赖额外的非官方解密组件，本仓没有也不会自动下载。开源许可、微信账号风险和聊天数据授权须在接入真实个人消息之前单独确认。
+- 仅访问命令行显式白名单中的会话 ID（最多 10 个）；`--allow-real-chats` 必须明确设置，实际使用前由用户确定数据范围与授权期限。
+- 每会话使用公开契约的 `since`、`offset`、`limit`，分页期间用 `end=watermark` 固定上界，避免消息持续增加时导致游标分页漂移；不存在稳定 ID 的纯文本消息视为源错误，不自行合成会话身份。
+- 读取 `ChatLab messages[].platformMessageId/sender/timestamp/type/content`，仅 `type=0` 纯文本进入 JEV；须提供 `--self-sender-id` 作为本人发送者标识，以免把自己发出的消息误当新收到的消息。
+- **默认只回溯启动前 60 秒**；`--lookback-seconds` 允许 1–3600 秒。为隐私不持久化聊天全文、WeFlow token 或游标；若停机超过已许可回溯时间，历史缺口仍需单独授权补齐，不能声称全量或零遗漏。
+- 只在整个 ChatLab 页通过检查并被 JEV 内存队列接受后确认上游 `nextSince/nextOffset`；异常则原页重试。Relay 消费端 500 条环形队列发生覆盖时返回 `gap=true`，要求使用者回补，不能静默当作完整历史。
+- 手机 Relay API 返回体限制在约 180 KiB（Android 端上限 256 KiB），大量长消息自动分次返回；未读完时 `has_more=true`。
+- 不调用 WeFlow POST、发送接口、朋友圈 API、Windows 微信进程/数据库或任何解密/注入逻辑；JEV 仅独立实现公开 HTTP 数据契约。
+
+**一手资料**：[WeFlow HTTP API](https://github.com/hicccc77/WeFlow/blob/main/docs/HTTP-API.md)。
+WeFlow 本体为 CC BY-NC-SA 4.0（非商业），其本地数据库连接还可能依赖额外非官方组件；**JEV 不打包、安装或重新授权 WeFlow**。真实用户数据接入之前仍需单独核查第三方许可证、采集范围、聊天联系人隐私及平台风险。
+
+### 完全合成的上游验收
+
+`desktop_bridge/tests/mock_chatlab_server.py` 是 Python 标准库测试服务，只响应 `sim-alpha`、`sim-beta` 两个虚构会话，不需要安装或登录微信。测试时由执行器生成随机临时 `WEFLOW_API_TOKEN` 与 `JEV_RELAY_TOKEN`，在各自进程环境中传入，不保存到源代码或日志。
+
+先启动本机模拟上游 `python desktop_bridge/tests/mock_chatlab_server.py --port 5031`，再用独立进程启动 `desktop_bridge/relay.py --account-ref fixture-account --weflow-url http://127.0.0.1:5031 --allow-real-chats --chat-id sim-alpha --chat-id sim-beta --self-sender-id synthetic-self`，通过 `/v1/poll` 的 Bearer Token 验证两个独立会话。Android 模拟器使用已经授权的 `adb reverse tcp:8766 tcp:8766` 接入合成源。
+
+真正的 WeFlow 数据接口不在该合成测试范围；没有经用户明确指定会话与数据处理权限前，不使用真实微信聊天记录替代模拟会话。
 
 ## 安全与测试边界
 
