@@ -44,3 +44,25 @@
 - **CI / 正式签名 / 发布 = NOT_RUN**。本次是 5070TI 本地通过的 Debug 验收，PR #21 保持 Draft，不合并原 PR #1 或 main。
 
 结论：`SYNTHETIC_DESKTOP_TO_ANDROID=PASS`；`SYNTHETIC_2_CHAT_IME_INSERT=PASS`；`SYNTHETIC_REVOKE_DENY=PASS`；`RELEASE_DEBUG_ISOLATION=PASS`；`DEFAULT_ARM64_AND_65_TESTS=PASS`；`WECHAT_REAL_DEVICE=NOT_RUN`。
+
+## 2026-11-10 增量：同步游标确认顺序修复
+
+**代码 HEAD**：`0e88298ddb7aefbf1f246bc62a6debeeec81d848`（基于此前合成双会话输入法 E2E 通过的代码继续增量修改）。
+
+### 根因与修复
+
+- 已验证旧 `DesktopBridgeClient.pollOnce()` 在校验 HTTP 消息基本字段后立刻更新 `generation/cursor`；此时 `DesktopSyncPipeline` 尚未完成按账号/profile 的消息入库，因此某条非法消息即使导致下游拒绝，也可能被下一轮跳过。
+- 现 `DesktopBridgeClient.pollOnce()` 仅取得并验证本批数据、暂存本次响应引用；`DesktopSyncPipeline` 先调用 `DesktopMessageIndex.acceptsTrustedBatch()` 校验全批次，完成目标 profile/account 的入库及用户已授权的候选处理后，才调用 `acknowledgeProcessed(batch)` 推进游标。
+- 无效消息、跨账号、非法字段拒绝推进游标；重复已入库消息及空批次允许合法确认。旧响应不得在后一次响应读取之后被确认。无需新增微信权限、私有数据库/进程读取、付费模型调用或自动发送。
+
+### 真实执行证据
+
+- **5070TI Windows 本机定向 Gradle/JUnit**：本机缓存 Gradle 8.13、AGP 8.10.1、Kotlin Gradle Plugin 1.9.24、Android SDK 36；`:app:testDebugUnitTest` 定向执行 `DesktopSyncPipelineTest`（7 项）、`DesktopBridgeClientTest`（5 项）、`DesktopMessageIndexTest`（6 项），总计 **18/18 PASS，0 FAILURE**。
+- 首次定向构建暴露新测试夹具使用 `jdk.httpserver` 模块但 Android Gradle 测试类路径没有该模块，已改用标准 `java.net.ServerSocket` 实现独立本地 HTTP 回放，**未修改工具链配置**。
+- **同 HEAD x86_64 Debug APK**：`:app:assembleDebug --offline -PjevEmulatorAbi=x86_64` `BUILD SUCCESSFUL`；29,090,293 bytes，SHA-256 `01D29CCEC5396C2F13C039DB68FC882CCC0A7DA8CC116681F575995659EFCFC2`，aapt `native-code: x86_64`。
+- Android 16 `emulator-5554` 已确认安装的是该精确 APK。第一次本轮复验的 `uiautomator dump` 返回 `null root node`，脚本安全清理；第二次模拟器冷启动慢，截图短时显示 `SYNC=CONNECTING`，同样未计 PASS。随后同代码/同安装包，保留合成数据源并在 UI 稳定后核验，实际回读 **`SYNC=PASS sessions=2 analyzed=2 messages=2`**，`CURSOR_ACK_SYNTHETIC_RUNTIME=PASS`。
+- 该轮临时本地 Token、Python relay 进程和 ADB reverse 均已清理；模拟器默认 LatinIME 未改变，JEV 测试进程已停止。没有读写个人微信聊天。
+
+### 验收分层
+
+`CURSOR_ACK_UNIT=PASS_18_18`、`CURSOR_ACK_SYNTHETIC_EMULATOR=PASS`、`SYNTHETIC_IME_2_CHAT_E2E=PRIOR_HEAD_PASS_SOURCE_UNCHANGED`、`WECHAT_REAL_A_B=NOT_RUN`、`WINDOWS_REAL_CHAT_SOURCE=NOT_RUN`、`SELF_HOSTED_CI=NOT_RUN`、`PUBLIC_RELEASE=NOT_RUN`。本次不把模拟器合成数据当作个人微信/正式服务验收，也不把“可重试游标”误称为无限历史完整性。
