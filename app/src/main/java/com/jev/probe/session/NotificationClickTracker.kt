@@ -1,12 +1,17 @@
 package com.jev.probe.session
 
-import java.security.MessageDigest
+import java.security.SecureRandom
+import javax.crypto.Mac
+import javax.crypto.spec.SecretKeySpec
 
 /**
  * Volatile, per-profile notification tap evidence. It never grants permission
  * to insert a reply and never stores message text or writes a file/log.
  */
 object NotificationClickTracker {
+    // Random for each app process. Short chat phrases cannot be looked up
+    // against a public SHA-256 dictionary if process memory is inspected.
+    private val fingerprintKey = ByteArray(32).also { SecureRandom().nextBytes(it) }
     private const val MAX_POSTED = 80
     private const val POST_TTL_MS = 30 * 60_000L
     private const val CLICK_TTL_MS = 15_000L
@@ -55,7 +60,9 @@ object NotificationClickTracker {
     fun fingerprint(text: String): String? {
         val normalized = text.replace("\r\n", "\n").trim()
         if (normalized.isBlank()) return null
-        val bytes = MessageDigest.getInstance("SHA-256").digest(normalized.toByteArray(Charsets.UTF_8))
-        return "sha256:" + bytes.joinToString("") { (it.toInt() and 255).toString(16).padStart(2, '0') }
+        val mac = Mac.getInstance("HmacSHA256")
+        mac.init(SecretKeySpec(fingerprintKey, "HmacSHA256"))
+        val bytes = mac.doFinal(normalized.toByteArray(Charsets.UTF_8))
+        return "hmac256:" + bytes.joinToString("") { (it.toInt() and 255).toString(16).padStart(2, '0') }
     }
 }
