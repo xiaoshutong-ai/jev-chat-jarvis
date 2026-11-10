@@ -89,6 +89,57 @@ class DesktopSyncPipelineTest {
         assertTrue(DesktopReplyInbox.list(scope, "desktop-1", 1_000_350).isEmpty())
     }
 
+    @Test fun ackIsDeferredUntilEntireBatchIsValidatedAndAccepted() {
+        var acknowledgements = 0
+        val good = event("good")
+        val pipeline = DesktopSyncPipeline(
+            config,
+            { listOf("suggestion") },
+            { DesktopBridgeClient.PollBatch("0123456789abcdef", 5, false, false, listOf(good)) },
+            { acknowledgements++ }
+        )
+        val accepted = pipeline.pollOnce(true, 1_000_200)
+        assertEquals(1, accepted.accepted)
+        assertEquals(1, acknowledgements)
+        pipeline.stop()
+
+        // A syntactically valid HTTP response can still contain an illegal
+        // domain message; it must not be discarded as a duplicate or ACKed.
+        var invalidAcks = 0
+        val invalid = DesktopSyncPipeline(
+            config,
+            { throw AssertionError("must not call model") },
+            {
+                DesktopBridgeClient.PollBatch("0123456789abcdef", 6, false, false,
+                    listOf(good.copy(messageId = "")))
+            },
+            { invalidAcks++ }
+        )
+        var denied = false
+        try { invalid.pollOnce(true, 1_000_200) }
+        catch (expected: IllegalArgumentException) { denied = true }
+        assertTrue(denied)
+        assertEquals(0, invalidAcks)
+        assertNull(DesktopPairingState.accountFor(scope))
+        invalid.stop()
+    }
+
+    @Test fun duplicateOnlyAndEmptyBatchesCanStillAdvanceCursor() {
+        var acks = 0
+        val duplicated = event("duplicate")
+        DesktopMessageIndex.mergeTrusted(scope, "desktop-1", listOf(duplicated), 1_000_100)
+        var invocation = 0
+        val pipeline = DesktopSyncPipeline(config, { listOf("candidate") }, {
+            invocation++
+            DesktopBridgeClient.PollBatch("0123456789abcdef", invocation.toLong(),
+                false, false, if (invocation == 1) listOf(duplicated) else emptyList())
+        }, { acks++ })
+        assertEquals(0, pipeline.pollOnce(false, 1_000_200).accepted)
+        assertEquals(0, pipeline.pollOnce(false, 1_000_300).accepted)
+        assertEquals(2, acks)
+        pipeline.stop()
+    }
+
     @Test fun revokingDesktopAccountDoesNotEraseOtherProfile() {
         val otherScope = "com.tencent.mm@UserHandle{999}"
         DesktopPairingState.establishAfterVerifiedPairing(otherScope, "desktop-2")
