@@ -42,8 +42,8 @@ class RelayStoreTest(unittest.TestCase):
 
     def test_generation_reset_and_gap(self):
         store = RelayStore("fixture-account", max_items=2)
-        store.append([item("1"), item("2"), item("3")])
-        self.assertEqual(["2", "3"], [x["message_id"] for x in store.poll(0, "old")["items"]])
+        store.append([item("1"), item("2"), item("3"), item("4")])
+        self.assertEqual(["3", "4"], [x["message_id"] for x in store.poll(0, "old")["items"]])
         self.assertTrue(store.poll(1, store.generation)["gap"])
 
     def test_rejects_forged_or_future_messages(self):
