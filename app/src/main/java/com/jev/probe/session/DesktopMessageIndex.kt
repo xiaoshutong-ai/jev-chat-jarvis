@@ -105,5 +105,12 @@ object DesktopMessageIndex {
         sessions[key(profileScope, pairedAccountRef, sessionId)]?.messages?.values?.toList() ?: emptyList()
 
     @Synchronized
+    fun clearScoped(profileScope: String, accountRef: String) {
+        sessions.entries.removeIf {
+            it.value.profileScope == profileScope && it.value.accountRef == accountRef
+        }
+    }
+
+    @Synchronized
     fun clear() = sessions.clear()
 }
