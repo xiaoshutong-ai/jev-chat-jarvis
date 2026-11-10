@@ -10,6 +10,8 @@ package com.jev.probe.session
  */
 object SessionBindingResolver {
     const val WECHAT_PACKAGE = "com.tencent.mm"
+    // User-selected clipboard labels are not authenticated WeChat session IDs.
+    const val USER_SELECTED_SESSION_PREFIX = "manual-user-"
     private const val OPEN_HINT_TTL_MS = 15_000L
     private const val MESSAGE_TIME_TOLERANCE_MS = 120_000L
     private const val CONFIRM_TTL_MS = 60_000L
@@ -77,6 +79,7 @@ object SessionBindingResolver {
         val matches = sessions.filter { candidate ->
             candidate.profileScope == editor.profileScope &&
                 candidate.sessionId.isNotBlank() &&
+                !candidate.sessionId.startsWith(USER_SELECTED_SESSION_PREFIX) &&
                 candidate.latestMessageFingerprint == fingerprint &&
                 candidate.latestMessageAtMs > 0L &&
                 candidate.latestMessageAtMs <= editor.startedAtMs &&
