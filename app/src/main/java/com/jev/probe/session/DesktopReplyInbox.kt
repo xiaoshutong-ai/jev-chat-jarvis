@@ -56,5 +56,12 @@ object DesktopReplyInbox {
         sessions.remove(key(profileScope, accountRef, sessionId))
     }
 
+    @Synchronized
+    fun clearScoped(profileScope: String, accountRef: String) {
+        sessions.entries.removeIf {
+            it.value.profileScope == profileScope && it.value.accountRef == accountRef
+        }
+    }
+
     @Synchronized fun clear() = sessions.clear()
 }
