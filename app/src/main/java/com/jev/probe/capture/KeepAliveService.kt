@@ -56,6 +56,9 @@ class KeepAliveService : Service() {
     private lateinit var overlay: OverlayController
     private val worker = Executors.newSingleThreadExecutor()
     private val epoch = AtomicLong(0L)
+    // Lifecycle cleanup cannot share the general analysis worker: onDestroy
+    // stops that worker and could otherwise leave old pairing data in memory.
+    private val desktopCleanupWorker = Executors.newSingleThreadExecutor()
     private var desktopScheduler: ScheduledExecutorService? = null
     private var desktopPipeline: DesktopSyncPipeline? = null
     private var desktopConfig: DesktopBridgeClient.Config? = null
@@ -410,13 +413,14 @@ class KeepAliveService : Service() {
         val previous = desktopPipeline
         desktopPipeline = null
         desktopConfig = null
-        if (previous != null && !worker.isShutdown) {
-            worker.execute { previous.stop() }
+        if (previous != null && !desktopCleanupWorker.isShutdown) {
+            desktopCleanupWorker.execute { previous.stop() }
         }
     }
 
     override fun onDestroy() {
         stopDesktopPolling()
+        desktopCleanupWorker.shutdown()
         if (clipboardReceiverRegistered) {
             runCatching { unregisterReceiver(clipboardReceiver) }
             clipboardReceiverRegistered = false
