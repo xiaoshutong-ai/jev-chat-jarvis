@@ -153,7 +153,7 @@ class SyntheticChatActivity : Activity() {
             return
         }
         status.text = "SYNC=CONNECTING"
-        recordSyntheticState("SYNC=CONNECTING"
+        recordSyntheticState("SYNC=CONNECTING")
         worker.execute {
             var candidate: DesktopSyncPipeline? = null
             try {
