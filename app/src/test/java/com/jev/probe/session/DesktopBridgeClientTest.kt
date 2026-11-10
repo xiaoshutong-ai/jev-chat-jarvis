@@ -63,6 +63,38 @@ class DesktopBridgeClientTest {
         }
     }
 
+    @Test fun localHttpCursorOnlyAdvancesAfterExplicitAcknowledgement() {
+        val requests = java.util.concurrent.CopyOnWriteArrayList<String>()
+        val server = com.sun.net.httpserver.HttpServer.create(
+            java.net.InetSocketAddress("127.0.0.1", 0), 0
+        )
+        server.createContext("/v1/poll") { exchange ->
+            requests += exchange.requestURI.rawQuery.orEmpty()
+            val payload = valid.toByteArray(Charsets.UTF_8)
+            exchange.responseHeaders.add("Content-Type", "application/json")
+            exchange.sendResponseHeaders(200, payload.size.toLong())
+            exchange.responseBody.use { it.write(payload) }
+        }
+        server.start()
+        try {
+            val client = DesktopBridgeClient(DesktopBridgeClient.Config(
+                "http://127.0.0.1:${server.address.port}",
+                "x".repeat(40), "desktop-1", "com.tencent.mm@UserHandle{0}"
+            ))
+            val first = client.pollOnce(nowMs = 1_001_000L)
+            val second = client.pollOnce(nowMs = 1_001_000L)
+            assertEquals(2, requests.size)
+            assertTrue(requests[0].contains("cursor=0"))
+            assertTrue(requests[1].contains("cursor=0"))
+            expectInvalid { client.acknowledgeProcessed(first) }
+            client.acknowledgeProcessed(second)
+            client.pollOnce(nowMs = 1_001_000L)
+            assertTrue(requests[2].contains("cursor=2"))
+        } finally {
+            server.stop(0)
+        }
+    }
+
     private fun expectInvalid(block: () -> Unit) {
         var threw = false
         try { block() } catch (expected: IllegalArgumentException) { threw = true }
