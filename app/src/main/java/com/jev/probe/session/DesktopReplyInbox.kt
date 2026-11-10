@@ -51,6 +51,27 @@ object DesktopReplyInbox {
             .filter { nowMs >= it.publishedAtMs && nowMs - it.publishedAtMs <= MAX_AGE_MS }
             .sortedByDescending { it.publishedAtMs }.toList()
 
+    /**
+     * Reject candidates captured by a still-visible IME button after a desktop
+     * account switch, reply replacement, consent revocation, or expiry.
+     * The IME must also verify the current profile-to-account pairing.
+     */
+    @Synchronized
+    fun isActiveCandidate(
+        profileScope: String,
+        accountRef: String,
+        sessionId: String,
+        publishedAtMs: Long,
+        reply: String,
+        nowMs: Long = System.currentTimeMillis()
+    ): Boolean {
+        val current = sessions[key(profileScope, accountRef, sessionId)] ?: return false
+        return current.publishedAtMs == publishedAtMs &&
+            nowMs >= current.publishedAtMs &&
+            nowMs - current.publishedAtMs <= MAX_AGE_MS &&
+            current.replies.contains(reply)
+    }
+
     @Synchronized
     fun consume(profileScope: String, accountRef: String, sessionId: String) {
         sessions.remove(key(profileScope, accountRef, sessionId))
