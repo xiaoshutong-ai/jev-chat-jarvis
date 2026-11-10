@@ -103,6 +103,9 @@ class SyntheticChatActivity : Activity() {
         }, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
         column.addView(switchRow)
         editorA.requestFocus()
+        // ADB can pass a throwaway synthetic-only token to start the same
+        // asynchronous path without relying on flaky emulator touch events.
+        if (intent.hasExtra("relay_token")) column.post { pollFixture() }
     }
 
     private fun makeEditor(hintLabel: String): EditText = EditText(this).apply {
