@@ -89,3 +89,21 @@ BLUE_STATUS: BLUE_FINDINGS（关键风险是错会话填入、采集来源信任
 **验收状态**：`SOURCE_COMPILE_WITH_STUBS=PASS`，`TARGETED_JUNIT=PASS_33_33`，`PYTHON_TESTS=PASS_8_8`，`DESKTOP_LOOPBACK_SYNTHETIC=PASS`，`PINNED_APK_BUILD=NOT_PASS`，`WECHAT_A_B_DEVICE_E2E=NOT_RUN`，`RELEASE=NOT_RUN`。
 
 **BLUE_STATUS: BLUE_FINDINGS**。联系人切换时若微信没有公开可靠的当前 session ID 信号，系统不能推断真实当前聊天；候选标签与用户明确点击仍是必要的最后一道确认。
+
+## 2026-11-10 Android 全模块构建与安装边界
+
+**源代码 HEAD：** `5b8f78594cd0d49720d7f662071b2460f09e56f5`，对应 Draft PR #21。此 HEAD 在 Windows 5070TI-JAY 独立工作树中完成以下验证，原 PR #1 和原 boundary 工作树未改动。
+
+- **实际源代码修复**：IME 点击候选时重新验证桌面账号及候选版本/时效，拒绝配对切换后遗留的按钮；`DesktopPairingState` 的所有权与轮询器实例绑定，旧轮询器清理不再覆盖同账号新实例；前台服务停止时由独立 cleanup worker 执行清理。
+- **Kotlin/JVM 定向**：本机 Kotlin 2.1.20、JDK17、Android 36 SDK；编译受影响模块和 NotificationListener、IME，JUnit `35/35 PASS`（外围依赖使用仓库外临时桩），HEAD 同上。
+- **前台服务源码定向编译**：真实 `KeepAliveService.kt` 与全部会话模块通过 Kotlin/Android SDK 36 编译，外围 UI/KB/网络 client 使用仓库外临时桩：`KEEP_ALIVE_COMPILE_EXIT=0`。
+- **Gradle Android 全模块源码与单测**：5070TI 已缓存 Gradle **8.13**（与仓库 wrapper 固定的 8.11.1 不同），自动使用工程固定 AGP **8.10.1**、Kotlin Gradle Plugin **1.9.24** 与本机 Android SDK；`:app:compileDebugKotlin :app:testDebugUnitTest` **BUILD SUCCESSFUL**；读取 XML 测试报告 **65 tests / 0 failures / 0 errors**。
+- **完整 APK**：相同 HEAD 执行 `:app:assembleDebug --offline` **BUILD SUCCESSFUL**；`app/build/outputs/apk/debug/app-debug.apk`，28,512,185 bytes，SHA-256 `7B128E47A39BC3ED3E1E729A899811D3D75E8C59B005C13245668321CDE46534`。包名 `com.jev.probe.guofeng`、versionCode 4、versionName `1.3-guofeng-debug`、target/compileSdk 36。
+- **签名**：本机 `apksigner verify --verbose --print-certs` 成功，APK Signature Scheme v2、1 个签名者，证书 SHA-256 `e92e4d40ce7694bce8d54dec2eb7e23afcd1a871891fe11e50cfec5ce57afa3f`。此为本机 **debug 签名**，不属于可以保证覆盖升级的正式签名，不用于公开发布。
+- **静态安全回读**：无 SelectToSpeak 伪装类、微信未列入 Accessibility 订阅、`isAccessibilityTool=false`、本 App 自有 AccessibilityService、Android Network Security 的 base cleartext=false、loopback 例外明确。6/6 检查均为 true。
+- **桌面 Python**：同项目 Windows/WSL2 自带 Python 环境的 `desktop_bridge/tests` **8/8 PASS**，且 loopback HTTP 合成数据实测 `DESKTOP_LOOPBACK_E2E=PASS`（无 Token 401、合法 Token 回两条不同会话；测试服务已停止）。
+- **模拟器适配边界**：已有 emulator-5554 是 x86_64/API36，正式产品 APK 仅 arm64-v8a 原生库，安装返回 `INSTALL_FAILED_NO_MATCHING_ABIS`；不表示源码或包损坏，不为可选模拟器验证额外下载 AVD/系统镜像。
+- **真机**：vivo V2366HA 当前未通过 ADB 在线（`adb mdns services` 也未发现设备），因此 **DEVICE_PASS / WECHAT_A_B_E2E = NOT_RUN**。未在手机安装本 APK、开启任何新权限、采集真实聊天或发送微信消息。
+
+**剩余业务验收**：Windows 的结构化真实消息来源目前未启用（WeFlow/其他第三方解密组件未安装/未授权）；Android 与 Windows 的公开网络安全配对尚未做正式运营配置；手机当前联系人无官方确定性 ID，因此 IME 仍采用显式标签确认，不能宣称零交互全自动。PR #21 继续 Draft，不合入、不公开发布。
+
