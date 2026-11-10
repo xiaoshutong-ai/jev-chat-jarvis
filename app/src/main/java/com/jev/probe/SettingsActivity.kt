@@ -21,6 +21,8 @@ import androidx.appcompat.app.AppCompatActivity
 import com.jev.probe.core.ChatSnapshot
 import com.jev.probe.core.Msg
 import com.jev.probe.core.Prefs
+import com.jev.probe.session.DesktopBridgeClient
+import com.jev.probe.capture.KeepAliveService
 import com.jev.probe.core.SecuritySelfCheck
 import com.jev.probe.capture.ocr.VisionDialogParser
 import com.jev.probe.core.kb.KbSelfCheck
@@ -480,8 +482,50 @@ class SettingsActivity : AppCompatActivity() {
         card3.addView(seek)
         root.addView(card3)
 
+        // =================== 电脑会话桥（显式授权） ===================
+        root.addView(section("电脑聊天上下文 · 测试版"))
+        val desktopCard = card()
+        desktopCard.addView(cardTitle("跨设备消息同步"))
+        desktopCard.addView(text(
+            "只有开启后才连接你配置的电脑消息桥。Android 不读取微信聊天窗口、截图或内部数据库。"+
+                "默认关闭；桌面仅同步你明确允许的会话。",
+            12f, sub
+        ))
+        val desktopBridgeUrlEdit = edit(prefs.desktopBridgeEndpoint, "https://你的可信地址 或 USB 调试 http://127.0.0.1:8766")
+        val desktopAccountEdit = edit(prefs.desktopBridgeAccountRef, "电脑账号标识（需与消息桥一致）")
+        val desktopTokenEdit = edit(prefs.desktopBridgeToken, "至少 32 位的配对 Token", password = true)
+        desktopCard.addView(label("消息桥地址（HTTPS / USB loopback）"))
+        desktopCard.addView(desktopBridgeUrlEdit)
+        desktopCard.addView(label("桌面账号标识"))
+        desktopCard.addView(desktopAccountEdit)
+        desktopCard.addView(label("配对 Token（仅保存在本机加密存储）"))
+        desktopCard.addView(desktopTokenEdit)
+        val desktopBridgeEnabledRow = toggleRow("允许本机接收电脑会话上下文", prefs.desktopBridgeEnabled)
+        desktopCard.addView(desktopBridgeEnabledRow)
+        val desktopAutoAnalyzeRow = toggleRow("新消息自动生成候选（会调用配置的 AI 服务）", prefs.desktopAutoAnalyze)
+        desktopCard.addView(desktopAutoAnalyzeRow)
+        desktopCard.addView(text(
+            "自动分析将把对应会话的文本交给当前配置的模型服务，可能产生费用。"+
+                "两个开关独立授权；生成结果只供你选择，不会自动发送微信消息。",
+            11f, sub
+        ))
+        root.addView(desktopCard)
+
         // =================== 保存 ===================
         root.addView(primaryBtn("保存全部设置") {
+            val desktopRequested = (desktopBridgeEnabledRow.tag as? Boolean) ?: false
+            val desktopUrl = desktopBridgeUrlEdit.text.toString().trim()
+            val desktopAccount = desktopAccountEdit.text.toString().trim()
+            val desktopToken = desktopTokenEdit.text.toString().trim()
+            if (desktopRequested && !DesktopBridgeClient.isEndpointAllowed(desktopUrl)) {
+                Toast.makeText(this, "电脑消息桥仅允许 HTTPS 或本机 USB 调试地址", Toast.LENGTH_LONG).show()
+                return@primaryBtn
+            }
+            if (desktopRequested && (desktopAccount.isBlank() || desktopToken.length < 32)) {
+                Toast.makeText(this, "请填写账号标识与至少 32 位的配对 Token", Toast.LENGTH_LONG).show()
+                return@primaryBtn
+            }
+
             // Address wins over the pill: a preset HOST in the box means that
             // preset's provider (and so its path), whatever the pill last said.
             val judgeBaseTyped = judgeBaseEdit.text.toString().trim()
@@ -527,6 +571,13 @@ class SettingsActivity : AppCompatActivity() {
             prefs.contextHistoryCount =
                 ctxCountEdit.text.toString().trim().toIntOrNull()?.coerceIn(0, 100) ?: 30
             prefs.overlayOpacity = seek.progress + 60
+            prefs.desktopBridgeEndpoint = desktopUrl
+            prefs.desktopBridgeAccountRef = desktopAccount
+            prefs.desktopBridgeToken = desktopToken
+            prefs.desktopAutoAnalyze = desktopRequested &&
+                ((desktopAutoAnalyzeRow.tag as? Boolean) ?: false)
+            prefs.desktopBridgeEnabled = desktopRequested
+
             val savedMessage = if (
                 prefs.ocrEngine == Prefs.OCR_VISION &&
                 prefs.effectiveVisionKey().isBlank()
@@ -536,6 +587,7 @@ class SettingsActivity : AppCompatActivity() {
                 "已保存"
             }
             Toast.makeText(this, savedMessage, Toast.LENGTH_SHORT).show()
+            if (prefs.enabled) KeepAliveService.start(this)
         })
 
         setContentView(scroll)
