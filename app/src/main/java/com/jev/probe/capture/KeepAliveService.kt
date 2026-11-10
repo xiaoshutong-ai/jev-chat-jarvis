@@ -22,10 +22,17 @@ import com.jev.probe.core.kb.ContextBuilder
 import com.jev.probe.core.kb.HistoryCaptureHint
 import com.jev.probe.core.kb.KbStore
 import com.jev.probe.jev.JevClient
+import com.jev.probe.jev.ReplyClient
+import com.jev.probe.session.DesktopBridgeClient
+import com.jev.probe.session.DesktopAnalysisCoordinator
+import com.jev.probe.session.DesktopMessageIndex
+import com.jev.probe.session.DesktopSyncPipeline
 import com.jev.probe.overlay.OverlayController
 import com.jev.probe.overlay.OverlayRuntime
 import java.util.ArrayDeque
 import java.util.concurrent.Executors
+import java.util.concurrent.ScheduledExecutorService
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicLong
 
 /**
@@ -49,6 +56,9 @@ class KeepAliveService : Service() {
     private lateinit var overlay: OverlayController
     private val worker = Executors.newSingleThreadExecutor()
     private val epoch = AtomicLong(0L)
+    private var desktopScheduler: ScheduledExecutorService? = null
+    private var desktopPipeline: DesktopSyncPipeline? = null
+    private var desktopConfig: DesktopBridgeClient.Config? = null
 
     /** In-memory only unless the user has separately enabled context history. */
     private val inbox = LinkedHashMap<String, ArrayDeque<WeChatNotification>>()
@@ -98,6 +108,7 @@ class KeepAliveService : Service() {
             }
             ACTION_SHOW -> if (prefs.enabled) overlay.showCaptureOnly()
         }
+        refreshDesktopPolling()
         return START_STICKY
     }
 
@@ -338,7 +349,74 @@ class KeepAliveService : Service() {
         android.os.Handler(mainLooper).post { block() }
     }
 
+    /**
+     * Start a single read-only, user-approved desktop poller. The desktop
+     * bridge never controls WeChat or touches its Android window hierarchy.
+     * When auto-analysis is disabled, messages stay in the volatile index and
+     * no model API call is made.
+     */
+    private fun refreshDesktopPolling() {
+        if (!prefs.enabled || !prefs.desktopBridgeEnabled) {
+            stopDesktopPolling()
+            return
+        }
+        val config = DesktopBridgeClient.Config(
+            endpoint = prefs.desktopBridgeEndpoint,
+            bearerToken = prefs.desktopBridgeToken,
+            pairedAccountRef = prefs.desktopBridgeAccountRef,
+            androidProfileScope = "com.tencent.mm@" + android.os.Process.myUserHandle().toString()
+        )
+        if (desktopConfig == config && desktopScheduler?.isShutdown == false) return
+        stopDesktopPolling()
+        val pipeline = runCatching {
+            DesktopSyncPipeline(config) { context: DesktopAnalysisCoordinator.ConversationContext ->
+                // The second toggle explicitly authorizes sending selected
+                // conversation text to the configured reply-model provider.
+                if (!prefs.enabled || !prefs.desktopAutoAnalyze) {
+                    emptyList()
+                } else {
+                    val messages = context.messages.map {
+                        Msg(
+                            side = if (it.direction == DesktopMessageIndex.Direction.ME) "me" else "other",
+                            text = it.text,
+                            ts = it.timeMs
+                        )
+                    }
+                    val snapshot = ChatSnapshot(
+                        title = context.displayName,
+                        messages = messages,
+                        note = "已授权的电脑同步会话；不代表手机微信当前联系人"
+                    )
+                    ReplyClient(prefs).draft(snapshot, prefs.relationship)
+                }
+            }
+        }.getOrNull() ?: return
+        desktopConfig = config
+        desktopPipeline = pipeline
+        desktopScheduler = Executors.newSingleThreadScheduledExecutor().also { scheduler ->
+            scheduler.scheduleWithFixedDelay({
+                if (!prefs.enabled || !prefs.desktopBridgeEnabled) return@scheduleWithFixedDelay
+                // Avoid writing chats, tokens, contact names or provider errors to logcat.
+                runCatching {
+                    pipeline.pollOnce(prefs.desktopAutoAnalyze)
+                }
+            }, 0, 5, TimeUnit.SECONDS)
+        }
+    }
+
+    private fun stopDesktopPolling() {
+        desktopScheduler?.shutdownNow()
+        desktopScheduler = null
+        val previous = desktopPipeline
+        desktopPipeline = null
+        desktopConfig = null
+        if (previous != null && !worker.isShutdown) {
+            worker.execute { previous.stop() }
+        }
+    }
+
     override fun onDestroy() {
+        stopDesktopPolling()
         if (clipboardReceiverRegistered) {
             runCatching { unregisterReceiver(clipboardReceiver) }
             clipboardReceiverRegistered = false
