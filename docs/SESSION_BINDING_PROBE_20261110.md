@@ -53,3 +53,39 @@ BLUE_STATUS: BLUE_FINDINGS（关键风险是错会话填入、采集来源信任
 - vivo `V2366HA` 经 ADB 识别为 Android 16/API 36；默认输入法仍为搜狗，未变更手机权限、未安装/启动新 APK、未触发任何真实微信交互。
 - 验收层级：`SOURCE_COMPILE_PASS (with stubs / Kotlin 2.1.20)`、`TARGETED_JUNIT_PASS 12/12`；`PINNED_ANDROID_BUILD=NOT_RUN`、`DEVICE_APP_INTEGRATION=NOT_RUN`、`RELEASE=NOT_RUN`。
 
+
+## 2026-11-10 后续源码推进与定向验收
+
+本轮继续使用唯一仓库 `xiaoshutong-ai/jev-chat-jarvis`，继续沿本 Draft PR #21 的独立分支推进，未修改原 PR #1、`main` 或原 JEV boundary 工作树。
+
+### 已提交的运行源码
+
+- `DesktopMessageIndex.kt`：严格按 Android profile、桌面 account ref、稳定 session/message ID 归类并去重；每会话最多 40 条、最多 50 会话，内存保存。
+- `DesktopBridgeClient.kt`：只允许 HTTPS 或本机 USB/ADB reverse 可用的 loopback HTTP；Bearer Token 必须至少 32 字符，拒绝重定向、账户不匹配、格式错误、未来时间与超大响应；检测消息缺口时停止推进。
+- `DesktopSyncPipeline.kt`：接入有效数据后合并上下文并建立进程内配对状态，只有用户明确开启自动分析时才调用外部注入的生成器；停止时仅清除对应 profile/account。
+- `DesktopAnalysisCoordinator.kt`：仅对最近收到且在数据索引中存在的消息生成候选，同一消息不重复触发模型，未授权时调用计数为零。
+- `DesktopReplyInbox.kt`：每个联系人有单独的、最长 10 分钟有效的候选池，不按“最近聊天”静默替换目标。
+- `ZhiyanInputMethodService.kt`：微信内禁止原有 armed reply 静默自动填入；已配对且有消息/回复候选时按联系人展示，**用户点击明确标名候选**才经 `SessionBindingResolver.confirm/canInsert` 写入；其他 App 原有明确一键填入路径不受影响。旧 `commitText` false 返回值已不再误报成功。
+- `NotificationClickTracker.kt`：只在内存保留点击线索，文字指纹改为进程随机 HMAC-SHA256，避免对简短聊天的固定 SHA-256 字典猜测。
+- `desktop_bridge/relay.py`：Python 3 标准库的 loopback-only HTTP 桥；固定 Bearer 鉴权、游标/代际与缺口标记，默认只读合成 JSON。可选 `--weflow-url` 必须显式开通真实会话白名单，不包含任何微信客户端逆向、密钥提取或自动发送。
+
+### 实际已运行证据
+
+- 5070TI-JAY 本机缓存 Kotlin compiler **2.1.20** + JDK17 + Android SDK36 + JUnit4.13.2；受影响模块（含 IME、通知回调、HTTP 解析器、Pipeline）的离线桩编译 `COMPILE_EXIT=0`、**33/33 JUnit PASS**，源码 HEAD `69271250693fbde85678f2432f1099cd1b445989`；后续仅变更桌面 Python 源及测试、文档，未重做无关 Kotlin 检查。
+- Windows Python 3.12.10：**8/8 unittest PASS**，HEAD `e497abeb9fc2a83fd95a5a9450a4b944dfa09f6c`。
+- 真实 Windows loopback HTTP 合成数据验证：`/health` 返回 ok、无 Token 为 401、有效 Bearer 返回两条不同会话的合成消息；`DESKTOP_LOOPBACK_E2E=PASS`，测试服务已停止，未处理个人微信消息。
+- 原 JEV worktree `D:\\GitHubWork\\jev-chat-jarvis-boundary` 与本隔离 worktree `D:\\GitHubWork\\jev-session-binding-pr21-20261110` 均无未提交修改。
+- 5070TI 的官方 Windows 微信进程存在；当前未发现本机 WeFlow API (5031) 或已安装 WeFlow 目录，未授权安装数据库解密组件。
+- vivo `V2366HA` / Android 16 已经通过无线 ADB 恢复连接，尚未更改其输入法、微信设置或安装 JEV APK。
+
+### 尚未完成的真正运行时步骤
+
+1. 用户界面里的**显式配对授权与 Token 的 AndroidKeyStore 加密存储**，以及前台服务中单实例定时轮询 `DesktopSyncPipeline`；目前类已实现、尚未在 App 生命周期启用。
+2. 在 JEV 真实分析引擎调用中传入正确的 profile/session 和联系人档案；真实消息调用模型必须先获用户单独允许，默认关闭。
+3. 5070TI/WSL 现有缓存未命中本工程固定的 AGP 8.10.1、Kotlin Gradle Plugin 1.9.24、Gradle wrapper 8.11.1，完整 Android build 在配置期被离线缓存缺失阻塞，**不能声称 APK 编译通过**。
+4. 微信 A/B 的 `NotificationListenerService.REASON_CLICK` 真实返回行为、IME 切换联系人 epoch 与错填保护，必须在新 APK 获得可验证签名后做一次真机 E2E。
+5. 个人微信完整历史数据源可能依赖非官方解密组件。当前仅实现可替换、只读、显式白名单的桥接契约，真实数据授权和第三方许可未扩展；JEV 不应自动安装或解密微信数据库。
+
+**验收状态**：`SOURCE_COMPILE_WITH_STUBS=PASS`，`TARGETED_JUNIT=PASS_33_33`，`PYTHON_TESTS=PASS_8_8`，`DESKTOP_LOOPBACK_SYNTHETIC=PASS`，`PINNED_APK_BUILD=NOT_PASS`，`WECHAT_A_B_DEVICE_E2E=NOT_RUN`，`RELEASE=NOT_RUN`。
+
+**BLUE_STATUS: BLUE_FINDINGS**。联系人切换时若微信没有公开可靠的当前 session ID 信号，系统不能推断真实当前聊天；候选标签与用户明确点击仍是必要的最后一道确认。
