@@ -332,6 +332,10 @@ def main(argv=None):
         parser.error("select exactly one of --fixture or --weflow-url")
     if args.weflow_url and not args.allow_real_chats:
         parser.error("real chats require explicit --allow-real-chats")
+    if args.weflow_url and not args.self_sender_id:
+        parser.error("real ChatLab sources require explicit --self-sender-id")
+    if args.weflow_url and not 1 <= args.lookback_seconds <= 3600:
+        parser.error("lookback must be between 1 and 3600 seconds")
     store = RelayStore(args.account_ref)
     source = None
     if args.fixture:
