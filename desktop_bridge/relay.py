@@ -18,6 +18,7 @@ import os
 from pathlib import Path
 import secrets
 import threading
+import sys
 import time
 from urllib.parse import parse_qs, quote, urlsplit
 from urllib.request import Request, build_opener, HTTPRedirectHandler
@@ -274,6 +275,32 @@ class WeFlowReader:
         self._pending = None
 
 
+def explicit_user_selected_test_message(text: str, account_ref: str, now_ms: int | None = None) -> dict:
+    """Test-only clipboard payload. Origin is a *user claim*, not proven WeChat API data.
+
+    The exact preannounced marker guards against accidentally importing another
+    application's clipboard. The sender is ME because the pilot sent the marker
+    to their own file-transfer assistant. It must never create an inbound AI reply.
+    """
+    if account_ref != "fixture-account" or not isinstance(text, str) or len(text) > 128:
+        raise ValueError("unexpected account or clipboard size")
+    if text.strip() != "JEV_TEST_01":
+        raise ValueError("clipboard marker does not match explicit test permission")
+    timestamp = int(time.time() * 1000) if now_ms is None else now_ms
+    result = {
+        "account_ref": account_ref,
+        "session_id": "manual-pilot-filehelper",
+        "message_id": "manual-" + secrets.token_hex(12),
+        "display_name": "文件传输助手（手动选择）",
+        "direction": "me",
+        "text": "JEV_TEST_01",
+        "time_ms": timestamp,
+    }
+    if not valid_item(result, account_ref):
+        raise ValueError("invalid manual test event")
+    return result
+
+
 def make_handler(store: RelayStore, token: str):
     class Handler(BaseHTTPRequestHandler):
         def log_message(self, fmt, *args):
@@ -315,6 +342,7 @@ def main(argv=None):
     parser.add_argument("--account-ref", required=True)
     parser.add_argument("--token-env", default="JEV_RELAY_TOKEN")
     parser.add_argument("--fixture", type=Path)
+    parser.add_argument("--manual-stdin-test", action="store_true", help="one-shot, exact JEV_TEST_01 supplied by user via stdin; no clipboard monitoring")
     parser.add_argument("--weflow-url")
     parser.add_argument("--weflow-token-env", default="WEFLOW_API_TOKEN")
     parser.add_argument("--allow-real-chats", action="store_true")
@@ -328,8 +356,11 @@ def main(argv=None):
     token = os.environ.get(args.token_env, "")
     if len(token) < 32:
         parser.error("set a random >=32-character relay token via the environment")
-    if bool(args.fixture) == bool(args.weflow_url):
-        parser.error("select exactly one of --fixture or --weflow-url")
+    modes = sum((bool(args.fixture), bool(args.weflow_url), args.manual_stdin_test))
+    if modes != 1:
+        parser.error("select exactly one of --fixture, --weflow-url or --manual-stdin-test")
+    if args.manual_stdin_test and args.account_ref != "fixture-account":
+        parser.error("manual test mode accepts only the synthetic fixture account")
     if args.weflow_url and not args.allow_real_chats:
         parser.error("real chats require explicit --allow-real-chats")
     if args.weflow_url and not args.self_sender_id:
@@ -343,6 +374,15 @@ def main(argv=None):
         count = store.append(payload)
         if count != len(payload):
             parser.error("fixture contains invalid or wrong-account data")
+    elif args.manual_stdin_test:
+        # Explicit one-off stream read. No polling of OS clipboard, Windows UI,
+        # WeChat process, database, or files. Never echo stdin into logs.
+        try:
+            event = explicit_user_selected_test_message(sys.stdin.read(129), args.account_ref)
+        except (ValueError, UnicodeError) as error:
+            parser.error(str(error))
+        if store.append([event]) != 1:
+            parser.error("manual test event rejected by relay")
     else:
         source = WeFlowReader(
             args.weflow_url, os.environ.get(args.weflow_token_env, ""),
