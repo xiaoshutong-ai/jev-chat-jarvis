@@ -79,7 +79,16 @@ class RelayStore:
             earliest = self._entries[0][0] if self._entries else self._next
             gap = cursor < earliest - 1
             available = [(seq, value) for seq, value in self._entries if seq > cursor]
-            selected = available[:limit]
+            selected: list[tuple[int, dict]] = []
+            # Android limits its poll response to 256 KiB. Keep the relay
+            # JSON payload comfortably below it even when many texts are long.
+            remaining_bytes = 180_000
+            for seq, value in available[:limit]:
+                cost = len(json.dumps(value, ensure_ascii=False).encode("utf-8")) + 12
+                if cost > remaining_bytes:
+                    break
+                selected.append((seq, value))
+                remaining_bytes -= cost
             next_cursor = selected[-1][0] if selected else max(cursor, self._next - 1)
             return {
                 "version": 1,
