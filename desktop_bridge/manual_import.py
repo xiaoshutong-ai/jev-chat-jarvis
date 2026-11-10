@@ -27,7 +27,7 @@ def valid_manual_account(account_ref: str) -> bool:
         isinstance(account_ref, str)
         and (account_ref == TEST_ACCOUNT_REF
              or (account_ref.startswith(MANUAL_ACCOUNT_PREFIX)
-                 and 7 <= len(account_ref) <= 120
+                 and 8 <= len(account_ref) <= 120
                  and all(c.isascii() and (c.isalnum() or c in "-_")
                          for c in account_ref)))
     )
@@ -130,7 +130,7 @@ def run_manual_gui(store, server) -> None:
     main.pack(fill="both", expand=True)
 
     ttk.Label(main, text="复制聊天文字 → 预览 → 指定会话及方向 → 确认导入").pack(anchor="w")
-    ttk.Label(main, text="只读取本次手动复制；不会监控微信、自动发送或调用模型。").pack(anchor="w")
+    ttk.Label(main, text="只读取本次手动复制；Windows 只导入，不调用模型或自动发送；Android 端若启用分析会调用已配置模型。").pack(anchor="w")
     ttk.Label(main, text="会话标签（由你填写，不能作为微信账号身份证明）：").pack(anchor="w", pady=(12, 0))
     label = ttk.Entry(main, width=45)
     label.pack(fill="x")
