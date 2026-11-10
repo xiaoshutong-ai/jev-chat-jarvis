@@ -70,6 +70,25 @@ class DesktopSyncPipelineTest {
         assertNull(DesktopPairingState.accountFor(scope))
     }
 
+    @Test fun oldPollerCannotRevokeNewOwnerOrDeleteSameAccountContext() {
+        val old = DesktopSyncPipeline(config, { listOf("old") }, {
+            DesktopBridgeClient.PollBatch("0123456789abcdef", 1, false, false, listOf(event("m1")))
+        })
+        val current = DesktopSyncPipeline(config, { listOf("new") }, {
+            DesktopBridgeClient.PollBatch("0123456789abcdef", 2, false, false, listOf(event("m2")))
+        })
+        old.pollOnce(false, 1_000_200)
+        current.pollOnce(true, 1_000_300)
+        old.stop()
+        assertEquals("desktop-1", DesktopPairingState.accountFor(scope))
+        assertEquals(2, DesktopMessageIndex.history(scope, "desktop-1", "wxid-a").size)
+        assertEquals(1, DesktopReplyInbox.list(scope, "desktop-1", 1_000_350).size)
+        current.stop()
+        assertNull(DesktopPairingState.accountFor(scope))
+        assertTrue(DesktopMessageIndex.history(scope, "desktop-1", "wxid-a").isEmpty())
+        assertTrue(DesktopReplyInbox.list(scope, "desktop-1", 1_000_350).isEmpty())
+    }
+
     @Test fun revokingDesktopAccountDoesNotEraseOtherProfile() {
         val otherScope = "com.tencent.mm@UserHandle{999}"
         DesktopPairingState.establishAfterVerifiedPairing(otherScope, "desktop-2")
