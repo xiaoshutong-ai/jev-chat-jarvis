@@ -61,35 +61,125 @@ class RelayStoreTest(unittest.TestCase):
         with self.assertRaises(ValueError):
             store.poll(-1, store.generation)
 
-    def test_weflow_page_budget_preserves_unprocessed_items(self):
+    def test_weflow_chatlab_paging_preserves_all_four_conversations(self):
         chats = ["chat-" + str(i) for i in range(4)]
-        reader = WeFlowReader("http://127.0.0.1:5031", "local-test-token",
-                              "fixture-account", chats)
+        reader = WeFlowReader("http://127.0.0.1:5031", "local-token",
+                              "fixture-account", chats, "self-wxid")
         now = int(time.time())
+        requests = []
         def fake_get(path):
-            chat = path.split("talker=", 1)[1].split("&", 1)[0]
+            from urllib.parse import parse_qs, unquote, urlsplit
+            url = urlsplit(path)
+            chat = unquote(url.path.split("/sessions/", 1)[1].split("/messages", 1)[0])
+            args = parse_qs(url.query)
+            since = int(args["since"][0])
+            offset = int(args["offset"][0])
+            limit = int(args["limit"][0])
+            requests.append((chat, since, offset, limit))
+            remaining = 40 - offset
+            amount = min(limit, remaining)
             return {
+                "meta": {"name": chat},
                 "messages": [{
-                    "serverId": chat + "-" + str(i),
-                    "localType": 1,
+                    "platformMessageId": chat + "-" + str(i),
+                    "type": 0, "sender": "other-wxid",
                     "content": "synthetic text " + str(i),
-                    "createTime": now,
-                    "isSend": 0
-                } for i in range(40)]
+                    "timestamp": now,
+                } for i in range(offset, offset + amount)],
+                "sync": {
+                    "hasMore": offset + amount < 40,
+                    "nextSince": since,
+                    "nextOffset": offset + amount,
+                    "watermark": now,
+                },
             }
         reader._get = fake_get
         first = reader.poll_once()
-        second = reader.poll_once()
         self.assertEqual(100, len(first))
+        # Before queue ACK the same page is repeated and no upstream read runs.
+        self.assertIs(first, reader.poll_once())
+        self.assertEqual(4, len(requests))
+        reader.acknowledge(first)
+        second = reader.poll_once()
         self.assertEqual(60, len(second))
+        reader.acknowledge(second)
         self.assertEqual(160, len({r["message_id"] for r in first + second}))
+        self.assertTrue(all(r["direction"] == "other" for r in first + second))
+        self.assertTrue(all(r["account_ref"] == "fixture-account" for r in first + second))
 
-    def test_weflow_input_requires_loopback_and_allowlist(self):
-        for base in ("https://example.com", "http://192.168.1.2:5031", "http://user:pass@127.0.0.1:5031"):
-            with self.assertRaises(ValueError):
-                WeFlowReader(base, "token", "fixture-account", ["demo-a"])
+    def test_weflow_ack_cannot_skip_unenqueued_messages(self):
+        reader = WeFlowReader("http://localhost:5031", "local-token",
+                              "fixture-account", ["demo-a"], "self-wxid")
+        now = int(time.time())
+        calls = []
+        def fake_get(path):
+            calls.append(path)
+            since = reader._cursors["demo-a"][0]
+            return {
+                "meta": {"name": "Synthetic"},
+                "messages": [{
+                    "platformMessageId": "msg-1", "type": 0,
+                    "sender": "self-wxid", "content": "my own text",
+                    "timestamp": now,
+                }],
+                "sync": {"hasMore": False, "nextSince": since,
+                         "nextOffset": 1, "watermark": now},
+            }
+        reader._get = fake_get
+        page = reader.poll_once()
+        self.assertEqual("me", page[0]["direction"])
+        self.assertIs(page, reader.poll_once())
+        self.assertEqual(1, len(calls))
         with self.assertRaises(ValueError):
-            WeFlowReader("http://127.0.0.1:5031", "token", "fixture-account", [])
+            reader.acknowledge([dict(page[0])])
+        self.assertEqual(1, len(calls))
+        reader.acknowledge(page)
+        reader.poll_once()
+        self.assertEqual(2, len(calls))
+
+    def test_weflow_bad_sync_or_missing_message_id_fails_closed(self):
+        reader = WeFlowReader("http://localhost:5031", "local-token",
+                              "fixture-account", ["demo-a"], "self-wxid")
+        now = int(time.time())
+        def fake_get(path):
+            return {
+                "meta": {"name": "Synthetic"},
+                "messages": [{"type": 0, "sender": "other",
+                              "timestamp": now, "content": "hello"}],
+                "sync": {"hasMore": False, "nextSince": now,
+                         "nextOffset": 0, "watermark": now}
+            }
+        reader._get = fake_get
+        with self.assertRaises(ValueError):
+            reader.poll_once()
+        self.assertIsNone(reader._pending)
+
+        def invalid_cursor(path):
+            since = reader._cursors["demo-a"][0]
+            return {"meta": {"name": "Synthetic"}, "messages": [],
+                    "sync": {"hasMore": True, "nextSince": since,
+                             "nextOffset": 0, "watermark": now}}
+        reader._get = invalid_cursor
+        with self.assertRaises(ValueError):
+            reader.poll_once()
+
+    def test_weflow_input_requires_loopback_allowlist_and_own_sender_id(self):
+        for base in ("https://example.com", "http://192.168.1.2:5031",
+                     "http://user:pass@127.0.0.1:5031",
+                     "http://127.0.0.1:5031/other?token=bad"):
+            with self.assertRaises(ValueError):
+                WeFlowReader(base, "token", "fixture-account", ["demo-a"], "self")
+        for chats, self_id in [([], "self"), (["a", "a"], "self"), (["a"], "")]:
+            with self.assertRaises(ValueError):
+                WeFlowReader("http://127.0.0.1:5031", "token",
+                             "fixture-account", chats, self_id)
+
+    def test_late_client_must_receive_gap_when_queue_truncated(self):
+        store = RelayStore("fixture-account", max_items=2)
+        self.assertEqual(4, store.append([item(str(i)) for i in range(4)]))
+        response = store.poll(0, "")
+        self.assertTrue(response["gap"])
+        self.assertEqual(["2", "3"], [r["message_id"] for r in response["items"]])
 
 
 class RelayHttpTest(unittest.TestCase):
