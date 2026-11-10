@@ -135,8 +135,11 @@ class WeFlowReader:
         self._cursors: dict[str, tuple[int, int]] = {
             chat: (start_since, 0) for chat in chat_ids
         }
+        self._watermarks: dict[str, int] = {}
         self._next_chat = 0
-        self._pending: tuple[list[dict], dict[str, tuple[int, int]], int] | None = None
+        self._pending: tuple[
+            list[dict], dict[str, tuple[int, int]], dict[str, int | None], int
+        ] | None = None
         self._opener = build_opener(NoRedirect)
 
     def _get(self, path: str) -> dict:
@@ -153,7 +156,8 @@ class WeFlowReader:
         return result
 
     @staticmethod
-    def _parse_cursor(data: dict, since: int, offset: int) -> tuple[int, int]:
+    def _parse_cursor(data: dict, since: int, offset: int,
+                      pinned_end: int | None) -> tuple[tuple[int, int], int | None]:
         sync = data.get("sync")
         if not isinstance(sync, dict) or type(sync.get("hasMore")) is not bool:
             raise ValueError("missing ChatLab sync metadata")
@@ -163,10 +167,17 @@ class WeFlowReader:
             raise ValueError("invalid ChatLab next cursor")
         if sync["hasMore"] and next_since == since and next_offset <= offset:
             raise ValueError("non-advancing ChatLab pagination")
-        return next_since, next_offset
+        if sync["hasMore"]:
+            watermark = sync.get("watermark")
+            if (type(watermark) is not int or watermark < since or
+                    watermark > int(time.time()) + 120):
+                raise ValueError("missing or invalid ChatLab pagination watermark")
+            return (next_since, next_offset), (pinned_end or watermark)
+        return (next_since, next_offset), None
 
     def _convert_page(self, data: dict, chat: str, since: int, offset: int,
-                      page_limit: int) -> tuple[list[dict], tuple[int, int]]:
+                      page_limit: int, pinned_end: int | None
+                      ) -> tuple[list[dict], tuple[int, int], int | None]:
         meta, messages = data.get("meta"), data.get("messages")
         if not isinstance(meta, dict) or not isinstance(messages, list):
             raise ValueError("missing ChatLab conversation or messages")
@@ -205,13 +216,15 @@ class WeFlowReader:
             if not valid_item(record, self.account_ref):
                 raise ValueError("invalid source record")
             converted.append(record)
-        return converted, self._parse_cursor(data, since, offset)
+        next_cursor, next_end = self._parse_cursor(data, since, offset, pinned_end)
+        return converted, next_cursor, next_end
 
     def poll_once(self) -> list[dict]:
         if self._pending is not None:
             return self._pending[0]  # Exact replay until queue ACK.
         batch: list[dict] = []
         updates: dict[str, tuple[int, int]] = {}
+        watermark_updates: dict[str, int | None] = {}
         # Keep every HTTP relay response comfortably below the Android 256KiB
         # response limit, including multiple chats with long text messages.
         budget = 160_000
@@ -222,12 +235,17 @@ class WeFlowReader:
             index = (self._next_chat + step) % count
             chat = self.chat_ids[index]
             since, offset = self._cursors[chat]
+            pinned_end = self._watermarks.get(chat)
             path = (
                 "/api/v1/sessions/" + quote(chat, safe="") + "/messages"
                 + f"?since={since}&offset={offset}&limit={page_limit}"
             )
+            if pinned_end is not None:
+                path += f"&end={pinned_end}"
             data = self._get(path)
-            records, next_cursor = self._convert_page(data, chat, since, offset, page_limit)
+            records, next_cursor, next_end = self._convert_page(
+                data, chat, since, offset, page_limit, pinned_end
+            )
             incoming_bytes = sum(len(json.dumps(record, ensure_ascii=False).encode("utf-8")) + 4
                                  for record in records)
             if len(batch) + len(records) > MAX_POLL_ITEMS or incoming_bytes > budget:
@@ -236,16 +254,22 @@ class WeFlowReader:
                 break  # Keep this chat's cursor untouched; poll it next.
             batch.extend(records)
             updates[chat] = next_cursor
+            watermark_updates[chat] = next_end
             budget -= incoming_bytes
             next_chat = (index + 1) % count
-        self._pending = (batch, updates, next_chat)
+        self._pending = (batch, updates, watermark_updates, next_chat)
         return batch
 
     def acknowledge(self, records: list[dict]) -> None:
         if self._pending is None or records is not self._pending[0]:
             raise ValueError("only the pending ChatLab page may be acknowledged")
-        _, updates, next_chat = self._pending
+        _, updates, watermarks, next_chat = self._pending
         self._cursors.update(updates)
+        for chat, end in watermarks.items():
+            if end is None:
+                self._watermarks.pop(chat, None)
+            else:
+                self._watermarks[chat] = end
         self._next_chat = next_chat
         self._pending = None
 
