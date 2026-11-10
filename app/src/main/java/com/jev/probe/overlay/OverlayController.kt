@@ -109,6 +109,11 @@ class OverlayController(private val ctx: Context) {
     private var replySorting: Boolean = false
     /** One-tap action armed by a fresh notification. */
     private var quickAction: (() -> Unit)? = null
+    private var quickActionAtMs: Long = 0L
+    /** Only unverified-chat safe mode uses the direct clipboard tap. */
+    private var clipboardOneTapMode: Boolean = false
+    /** Ephemeral source fingerprint to avoid displaying a different chat's result. */
+    private var clipboardResultFingerprint: String? = null
 
     private fun dp(v: Int) = TypedValue.applyDimension(
         TypedValue.COMPLEX_UNIT_DIP, v.toFloat(), ctx.resources.displayMetrics).roundToInt()
@@ -287,14 +292,34 @@ class OverlayController(private val ctx: Context) {
                     else if (moved) {
                         prefs.bubbleX = params.x; prefs.bubbleY = params.y; true  // stays where dropped
                     } else {
-                        if (expanded) {
-                            toggle()
-                        } else {
-                            val quick = quickAction
-                            if (quick != null) {
+                        when (OverlayTapPolicy.decide(
+                            expanded = expanded,
+                            hasNotificationAction = quickAction != null,
+                            notificationReadyAtMs = quickActionAtMs,
+                            clipboardOneTapAvailable = clipboardOneTapMode && onAnalyzeClipboard != null,
+                            nowMs = System.currentTimeMillis()
+                        )) {
+                            OverlayTapPolicy.Action.COLLAPSE -> toggle()
+                            OverlayTapPolicy.Action.NOTIFICATION -> {
+                                val action = quickAction
                                 quickAction = null
-                                quick.invoke()
-                            } else {
+                                quickActionAtMs = 0L
+                                action?.invoke()
+                            }
+                            OverlayTapPolicy.Action.EXPLICIT_CLIPBOARD -> {
+                                // The tap is explicit user authorization.
+                                // A separate foreground Activity reads clipboard later.
+                                quickAction = null
+                                quickActionAtMs = 0L
+                                onAnalyzeClipboard?.invoke()
+                            }
+                            OverlayTapPolicy.Action.CHOICE_MENU -> {
+                                showNotificationOrClipboardChoice()
+                                toggle()
+                            }
+                            OverlayTapPolicy.Action.SAFE_MENU -> {
+                                quickAction = null
+                                quickActionAtMs = 0L
                                 showSafeEntryMenu()
                                 toggle()
                             }
@@ -376,6 +401,8 @@ class OverlayController(private val ctx: Context) {
     fun showNotificationReady(title: String?, onAnalyze: () -> Unit) {
         ensureRoot()
         quickAction = onAnalyze
+        quickActionAtMs = System.currentTimeMillis()
+        clipboardOneTapMode = true
         bubble?.alpha = 1f
         dangerDot?.background = GradientDrawable().apply {
             shape = GradientDrawable.OVAL
@@ -396,13 +423,42 @@ class OverlayController(private val ctx: Context) {
      * exposes only explicit clipboard/OCR inputs; adapted apps render their own
      * current-chat analysis control after a chat window is positively identified.
      */
+    /** A fresh notification must not hijack an explicit copied-message tap. */
+    private fun showNotificationOrClipboardChoice() {
+        ensureRoot()
+        val views = ArrayList<View>()
+        views.add(line("请选择本次分析的消息来源", "#5C6560", 13f, true))
+        onAnalyzeClipboard?.let { action ->
+            views.add(bigButton("分析刚复制的消息") {
+                quickAction = null
+                quickActionAtMs = 0L
+                action.invoke()
+            })
+        }
+        val notificationAction = quickAction
+        val receivedAt = quickActionAtMs
+        if (notificationAction != null) {
+            views.add(secondaryButton("分析刚收到的微信通知") {
+                quickAction = null
+                quickActionAtMs = 0L
+                val age = System.currentTimeMillis() - receivedAt
+                if (age < 0 || age > OverlayTapPolicy.NOTIFICATION_TTL_MS) {
+                    toast("该通知已过期，请重新选择消息")
+                } else {
+                    notificationAction.invoke()
+                }
+            })
+        }
+        setContent(views)
+    }
+
     private fun showSafeEntryMenu() {
         ensureRoot()
         val previous = lastJudgment
         val views = ArrayList<View>()
         views.add(line("主动分析", "#5C6560", 12f, true))
         onAnalyzeClipboard?.let { action ->
-            views.add(bigButton("分析剪贴板") { action.invoke() })
+            views.add(bigButton("分析刚复制的消息") { action.invoke() })
         }
         onOcrCapture?.let { action ->
             views.add(secondaryButton("本地截屏识别（可选，无需图像 Key）") { action.invoke() })
@@ -424,13 +480,14 @@ class OverlayController(private val ctx: Context) {
     fun showCaptureOnly(note: String? = null) {
         resetForNewConversation()
         ensureRoot()
+        clipboardOneTapMode = true
         bubble?.alpha = 0.75f
         val views = ArrayList<View>()
         note?.takeIf { it.isNotBlank() }?.let {
             views.add(line(it, "#5C6560", 12f, true))
         }
         onAnalyzeClipboard?.let { action ->
-            views.add(bigButton("分析剪贴板") { action.invoke() })
+            views.add(bigButton("分析刚复制的消息") { action.invoke() })
         }
         onOcrCapture?.let { action ->
             views.add(secondaryButton("本地截屏识别（无需图像 Key）") { action.invoke() })
@@ -445,11 +502,12 @@ class OverlayController(private val ctx: Context) {
     fun showWeChatActiveMode() {
         resetForNewConversation()
         ensureRoot()
+        clipboardOneTapMode = true
         bubble?.alpha = 0.75f
         val views = ArrayList<View>()
         views.add(line("微信安全模式 · 不读取内部控件", "#5C6560", 12f, true))
         onAnalyzeClipboard?.let { action ->
-            views.add(bigButton("分析剪贴板") { action.invoke() })
+            views.add(bigButton("分析刚复制的消息") { action.invoke() })
         }
         onOcrCapture?.let { action ->
             views.add(secondaryButton("本地截屏识别（可选，无需图像 Key）") { action.invoke() })
@@ -458,6 +516,7 @@ class OverlayController(private val ctx: Context) {
     }
 
     fun showIdle(title: String?) {
+        clipboardOneTapMode = false // Adapters keep their own safe analysis path.
         ensureRoot(); bubble?.alpha = 0.55f
         // Either there is genuinely nothing to show yet, or the panel is empty
         // for some other reason (root got rebuilt after hide(), leaving
@@ -484,8 +543,10 @@ class OverlayController(private val ctx: Context) {
      */
     fun resetForNewConversation() {
         lastJudgment = null
+        clipboardResultFingerprint = null
         ReplyHandoff.clear()
         quickAction = null
+        quickActionAtMs = 0L
         dangerDot?.background = GradientDrawable().apply {
             shape = GradientDrawable.OVAL
             setColor(Color.TRANSPARENT)
@@ -520,6 +581,7 @@ class OverlayController(private val ctx: Context) {
     fun showLoading() {
         ensureRoot(); bubble?.alpha = 1f
         quickAction = null
+        quickActionAtMs = 0L
         dangerDot?.background = GradientDrawable().apply {
             shape = GradientDrawable.OVAL
             setColor(Color.TRANSPARENT)
@@ -556,9 +618,18 @@ class OverlayController(private val ctx: Context) {
             hint(msg)))
     }
 
-    fun showJudgment(a: Analysis) {
+    fun showJudgment(a: Analysis, clipboardFingerprint: String? = null) {
         lastJudgment = a
+        clipboardResultFingerprint = clipboardFingerprint
         render(a, generating = true)
+    }
+
+    /** Only reopen the result made for these exact explicitly copied bytes. */
+    fun reopenClipboardResult(fingerprint: String): Boolean {
+        val result = lastJudgment ?: return false
+        if (fingerprint.isBlank() || clipboardResultFingerprint != fingerprint) return false
+        render(result, generating = result.rankedReplies.isEmpty())
+        return true
     }
 
     fun showReplies(

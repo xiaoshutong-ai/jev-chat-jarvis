@@ -4,16 +4,16 @@ import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.Service
-import android.content.BroadcastReceiver
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
-import android.content.IntentFilter
 import android.os.Build
 import android.os.IBinder
 import com.jev.probe.ClipboardImportActivity
 import com.jev.probe.core.ChatSnapshot
+import com.jev.probe.core.ExplicitClipboardPolicy
+import com.jev.probe.core.RecentExplicitCopy
 import com.jev.probe.core.Msg
 import com.jev.probe.core.Prefs
 import com.jev.probe.core.RankedReply
@@ -67,14 +67,7 @@ class KeepAliveService : Service() {
     private val inbox = LinkedHashMap<String, ArrayDeque<WeChatNotification>>()
     private var latestKey: String? = null
     private var latestAt: Long = 0L
-
-    private var clipboardReceiverRegistered = false
-    private val clipboardReceiver = object : BroadcastReceiver() {
-        override fun onReceive(context: Context?, intent: Intent?) {
-            if (intent?.action != ClipboardImportActivity.ACTION_CLIPBOARD_READY) return
-            handleClipboardText(intent.getStringExtra(ClipboardImportActivity.EXTRA_TEXT).orEmpty())
-        }
-    }
+    private val recentExplicitCopy = RecentExplicitCopy()
 
     override fun onCreate() {
         super.onCreate()
@@ -84,22 +77,20 @@ class KeepAliveService : Service() {
         overlay = OverlayRuntime.get(this)
         overlay.onAnalyzeClipboard = { launchClipboardImport() }
 
-        if (!clipboardReceiverRegistered) {
-            val filter = IntentFilter(ClipboardImportActivity.ACTION_CLIPBOARD_READY)
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                registerReceiver(clipboardReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
-            } else {
-                @Suppress("DEPRECATION")
-                registerReceiver(clipboardReceiver, filter)
-            }
-            clipboardReceiverRegistered = true
-        }
-
         if (prefs.enabled) overlay.showCaptureOnly()
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
+            ClipboardImportActivity.ACTION_CLIPBOARD_READY -> {
+                // Explicit non-exported service call from the app's own
+                // foreground clipboard Activity. Never accept external IPC.
+                if (prefs.enabled) {
+                    handleClipboardText(
+                        intent.getStringExtra(ClipboardImportActivity.EXTRA_TEXT).orEmpty()
+                    )
+                }
+            }
             ACTION_WECHAT_NOTIFICATION -> {
                 val title = intent.getStringExtra(EXTRA_TITLE).orEmpty().trim()
                 val text = intent.getStringExtra(EXTRA_TEXT).orEmpty().trim()
@@ -201,45 +192,46 @@ class KeepAliveService : Service() {
     }
 
     private fun handleClipboardText(raw: String) {
-        val text = raw.trim()
-        if (text.isBlank()) {
-            overlay.toast("剪贴板没有可分析文字；请先在微信里复制")
-            return
-        }
-
-        val recentKey = latestKey?.takeIf {
-            System.currentTimeMillis() - latestAt <= TITLE_REUSE_MS
-        }
-        val recentItem = recentKey?.let { inbox[it]?.lastOrNull() }
-        val title = recentItem?.title?.takeIf { it != "微信消息" }
-        val appScope = recentItem?.userLabel?.let { wechatScope(it) } ?: WECHAT_PKG
-
         val now = System.currentTimeMillis()
-        val messages = text.lineSequence()
-            .map { it.trim() }
-            .filter { it.isNotEmpty() }
-            .take(MAX_CLIPBOARD_LINES)
-            .map { Msg("other", it, now) }
-            .toList()
-
-        if (messages.isEmpty()) {
-            overlay.toast("剪贴板没有可分析文字")
+        val snapshot = ExplicitClipboardPolicy.fromUserCopy(raw, now)
+        if (snapshot == null) {
+            overlay.toast("请先复制一条不超过 4000 字的对方消息")
+            return
+        }
+        if (!prefs.hasKey()) {
+            overlay.showError("请先在 JEV 设置中配置模型 API Key")
             return
         }
 
-        val snapshot = ChatSnapshot(
-            title = title,
-            messages = messages,
-            note = "剪贴板文本 · 由你主动复制；未自动判断说话人"
+        val text = snapshot.messages.single().text
+        val fingerprint = ExplicitClipboardPolicy.fingerprint(text)
+        if (recentExplicitCopy.checkAndMark(text, now)) {
+            if (overlay.reopenClipboardResult(fingerprint)) {
+                overlay.toast("已显示刚才的候选，不会重复调用模型")
+            } else {
+                overlay.toast("相同文字正在分析，避免重复调用模型")
+            }
+            return
+        }
+
+        // A notification may be from WeChat A while clipboard is from clone B:
+        // NEVER borrow its contact title, userLabel, or relationship.
+        overlay.setManualAnalyzeHandler(this) {
+            recentExplicitCopy.clear()
+            launchClipboardImport()
+        }
+        analyzeSnapshot(
+            snapshot, WECHAT_PKG, HistoryCaptureHint.CONSERVATIVE,
+            clipboardFingerprint = fingerprint
         )
-        analyzeSnapshot(snapshot, appScope, HistoryCaptureHint.CONSERVATIVE)
     }
 
     private fun analyzeSnapshot(
         snapshot: ChatSnapshot,
         app: String,
         historyHint: HistoryCaptureHint,
-        allowAutoCopy: Boolean = false
+        allowAutoCopy: Boolean = false,
+        clipboardFingerprint: String? = null
     ) {
         if (!prefs.hasKey()) {
             overlay.showError("未设置判断接口密钥，去设置里填")
@@ -265,7 +257,7 @@ class KeepAliveService : Service() {
                 if (epoch.get() != myEpoch) return@mainPost
                 overlay.setContextInfo(ctx?.notes?.size ?: 0, ctx?.history?.size ?: 0)
                 if (judgment.error != null) overlay.showError(judgment.error)
-                else overlay.showJudgment(judgment)
+                else overlay.showJudgment(judgment, clipboardFingerprint)
             }
             if (judgment.error != null) return@execute
 
@@ -316,6 +308,9 @@ class KeepAliveService : Service() {
     }
 
     private fun effectiveRelationship(snapshot: ChatSnapshot, ctx: ChatContext?): String {
+        if (snapshot.title.isNullOrBlank()) {
+            return "联系人与关系均未核验；只根据用户主动复制的文字回答，不能推断此前会话的身份"
+        }
         val display = ctx?.contact?.name?.trim().orEmpty()
             .ifBlank { KbStore.displayName(snapshot.title) }
         val relation = ctx?.contact?.relationship?.trim().orEmpty()
@@ -421,10 +416,6 @@ class KeepAliveService : Service() {
     override fun onDestroy() {
         stopDesktopPolling()
         desktopCleanupWorker.shutdown()
-        if (clipboardReceiverRegistered) {
-            runCatching { unregisterReceiver(clipboardReceiver) }
-            clipboardReceiverRegistered = false
-        }
         epoch.incrementAndGet()
         overlay.setSaveContactHandler(this, null)
         overlay.setManualAnalyzeHandler(this, null)
@@ -444,8 +435,6 @@ class KeepAliveService : Service() {
         private const val WECHAT_PKG = "com.tencent.mm"
         private const val MAX_NOTIFICATION_HISTORY = 20
         private const val MAX_ANALYSIS_MESSAGES = 12
-        private const val MAX_CLIPBOARD_LINES = 30
-        private const val TITLE_REUSE_MS = 10 * 60_000L
 
         private const val ACTION_SHOW = "com.jev.probe.action.SHOW_ASSISTANT"
         private const val ACTION_WECHAT_NOTIFICATION = "com.jev.probe.action.WECHAT_NOTIFICATION"
