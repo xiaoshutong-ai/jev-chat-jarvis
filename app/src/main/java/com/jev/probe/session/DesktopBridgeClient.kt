@@ -100,6 +100,23 @@ class DesktopBridgeClient(private val config: Config) {
 
     private var generation = ""
     private var cursor = 0L
+    private var lastFetched: PollBatch? = null
+
+    /**
+     * Exactly one successful downstream acceptance may advance this cursor.
+     * A failed validation or index write retries the same source position.
+     */
+    @Synchronized
+    fun acknowledgeProcessed(batch: PollBatch) {
+        require(lastFetched === batch) { "only the last fetched batch may be acknowledged" }
+        require(batch.cursor >= 0L) { "invalid acknowledged cursor" }
+        if (batch.generation == generation) {
+            require(batch.cursor >= cursor) { "cursor must not move backward" }
+        }
+        generation = batch.generation
+        cursor = batch.cursor
+        lastFetched = null
+    }
 
     @Synchronized
     fun pollOnce(nowMs: Long = System.currentTimeMillis()): PollBatch {
@@ -134,8 +151,9 @@ class DesktopBridgeClient(private val config: Config) {
             }) { "message timestamp outside the trusted window" }
             // Transport only. The caller chooses when the authenticated data
             // may enter the per-profile index or trigger opt-in model analysis.
-            generation = batch.generation
-            cursor = batch.cursor
+            // Do not consume data here: the pipeline must first validate
+            // the entire batch and import it into the right account/profile.
+            lastFetched = batch
             return batch
         } finally {
             connection.disconnect()
