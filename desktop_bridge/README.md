@@ -52,6 +52,20 @@ WeFlow 本体为 CC BY-NC-SA 4.0（非商业），其本地数据库连接还可
 
 真正的 WeFlow 数据接口不在该合成测试范围；没有经用户明确指定会话与数据处理权限前，不使用真实微信聊天记录替代模拟会话。
 
+## Windows GUI：先看剪贴板、再确认方向与会话
+
+**推荐试点入口**（PowerShell 7；不需要微信数据库密钥或 WeFlow）：
+
+```powershell
+& 'D:\GitHubWork\jev-session-binding-pr21-20261110\desktop_bridge\start_manual_gui.ps1' -AccountRef 'manual-pilot' -Port 18766
+```
+
+小窗口在用户点击「读取剪贴板」后才读取一次公共剪贴板，展示完整预览；用户填写会话标签、明确选择「我发送的/对方发送的」，再点「确认导入 JEV」。**手动会话只是用户声明，不是已验证的微信联系人 ID**；Android 端不会为这种会话生成微信通知自动匹配，候选上显示“联系人未核验”，点击后也仅填入而不发送。重复点击相同会话、方向及正文在 30 秒内自动去重。关闭窗口即停止本机 HTTP Relay，正文和配对 Token 不落盘。
+
+窗口有「复制本机配对 Token（敏感）」按钮，只有用户点击时才把临时 Token 放入 Windows 剪贴板。Android Debug 试点要使用相同账户标识，并通过已授权的 USB 端口反向映射（Android 本机 8766 → Windows 18766）或专门配置的 HTTPS 安全通道配对。**仅在 Android 用户另行开启候选分析开关后，才可能调用已配置的付费模型**，请注意费用。当前该路径仅为 SOURCE_ONLY，尚未完成 vivo 微信 A/B 真机接入验收。
+
+完整流程、命令、测试等级和验收证据见 [docs/MANUAL_TEXT_IMPORT_GUI_20261110.md](../docs/MANUAL_TEXT_IMPORT_GUI_20261110.md)。
+
 ## 用户主动复制的单次文件传输助手试点（不使用数据库密钥）
 
 此模式用于先核验已经发到**独立测试微信号**「文件传输助手」的文本 `JEV_TEST_01` 的 Windows → JEV 输入链路。它不是微信自动历史同步，也不能从微信界面或数据库自动读取。
