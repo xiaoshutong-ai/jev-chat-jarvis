@@ -50,3 +50,16 @@
 - 真正的可信 WCDB 动态库仍未安装，也没有正式源码/版本/许可证的可信组件回执；因此启动 WeFlow 空插件模式属于 `UI_STARTUP_TEST`，绝不视为 `REAL_CHAT_READ_PASS`。上游公开说明其 DLL 可实现任意 SQL 与消息写操作，JEV API 白名单不能约束插件能力。未使用非官方补丁或绕过第三方许可/过期检测。
 
 本阶段状态：`TEST_WINDOWS_PROCESS_OWNER=PASS`；`PROFILE_SEPARATION=PASS`；`LAUNCHER_ACCOUNT_GUARD=PASS`；`WEFLOW_UI_STARTUP=NOT_RUN`；`NATIVE_COMPONENT=NOT_INSTALLED`；`REAL_WECHAT_MESSAGE_READ=NOT_RUN`；`PROVIDER_CALL=0`；`AUTO_SEND=0`。
+
+## 2026-11-10 WeFlow 首次启动后的安全与接口验收
+
+本轮接到用户确认“测试号已登录并发送消息”“WeFlow 已打开”，在 5070TI-JAY 的 PowerShell 7.6.6 下仅进行了进程、用户配置、窗口公开接口与协议来源核查：
+
+- Windows WMI 检出 5 个 `WeFlow.exe` 进程，**全部**由 `5070TI-JAY\\cc-g52-pilot` 拥有，路径均为 `C:\\Users\\cc-g52-pilot\\AppData\\Local\\JEV-WeFlow-Pilot\\WeFlow.exe`。测试微信与 Administrator 的微信进程仍分属不同 Windows 用户，未切换或关闭主桌面程序。
+- 从 **测试用户自己的** `%APPDATA%\\weflow\\WeFlow-config.json` 中仅回读白名单配置项，不记录任何敏感值：`onboardingDone=false`、`httpApiEnabled=false`、`messagePushEnabled=false`、`logEnabled=false`、`launchAtStartup=false`；`wcdbLibPath`、`keyProviderPath`、`dbPath`、`decryptKey`、`myAccountId`、`httpApiToken`、`aiModelApiKey` 均为空，`accountConfigs` 条目数 0。**程序已启动 ≠ 解密数据库已成功 ≠ 聊天消息已读取。**
+- 测试 Windows 微信现有窗口，通过系统 `UIAutomationClient` 只读查看其可访问性树：只有 **2 个**后代控件，当前没有公开精确的“文件传输助手”标签或 `JEV_TEST_01` 消息文本。因此在该版本/运行状态下，标准 Windows UI Automation **不能**作为已验证的消息读取源；没有尝试反射、HOOK、截图识别或注入。
+- 本机端口检查：`5031`（WeFlow API）不在监听；`8766` 正被测试用户进程 `baidupinyin.exe` 绑定到 `0.0.0.0`，不是 JEV Relay；`18766` 空闲。将来真接 JEV 试点时应为 Relay 显式指定 `--port 18766`，Android 配对 URL 同步更改，**不得**结束或抢占输入法的端口。
+- 对公开的第三方 `334456777/WeFlow` Rust CLI 做了**静态审查，不下载、不安装、不执行**。其源码 `crates/weflow-native/src/cipher_vfs.rs` 有 `SQLITE_OPEN_READONLY` 处理，但 Windows 密钥提取代码 `crates/weflow-native/src/windows_db_key/platform.rs` 调用 **`DebugActiveProcess(pid)`**。这是对微信进程使用 Windows 调试 API 的实质性风险路径，并非“纯粹读取数据库”或无侵入；4.2.0.13 实测兼容性未知。该 CLI 的 Unlicense 标称许可也不能自动解决其与上游 WeFlow CC BY-NC-SA 4.0 衍生关系可能涉及的分发合规问题。
+- 不下载过期 DLL 的修改补丁，不关闭/重启微信，不读取进程内存/密钥，不加载未知原生组件。用户原授权仅限独立测试号、文件传输助手、本机只读；下一步若需以调试器附加测试微信获取 SQLCipher 密钥，须明确告诉用户这种新增账号风险，确认后还须验证仅针对 `cc-g52-pilot` 目标 PID，绝不面向 Administrator 主号。
+
+**本轮验收层级**：`WEFLOW_PILOT_LAUNCH=PASS`、`WINDOWS_ACCOUNT_ISOLATION=PASS`、`FIRST_RUN_CONFIGURATION_AUDIT=PASS`、`DIRECT_WINDOWS_UIA_MESSAGE_READ=UNSUPPORTED_IN_TEST`、`RELAY_DEFAULT_PORT_CONFLICT=CONFIRMED`、`TRUSTED_WCDB_PLUGIN=ABSENT`、`REAL_FILE_TRANSFER_MESSAGE_READ=NOT_RUN`、`AI_MODEL_CALL=0`、`AUTO_SEND=0`。保持 PR #21 Draft，应用与微信均未发生数据库操作。
