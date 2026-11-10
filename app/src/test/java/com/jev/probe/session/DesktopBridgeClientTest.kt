@@ -65,20 +65,39 @@ class DesktopBridgeClientTest {
 
     @Test fun localHttpCursorOnlyAdvancesAfterExplicitAcknowledgement() {
         val requests = java.util.concurrent.CopyOnWriteArrayList<String>()
-        val server = com.sun.net.httpserver.HttpServer.create(
-            java.net.InetSocketAddress("127.0.0.1", 0), 0
-        )
-        server.createContext("/v1/poll") { exchange ->
-            requests += exchange.requestURI.rawQuery.orEmpty()
-            val payload = valid.toByteArray(Charsets.UTF_8)
-            exchange.responseHeaders.add("Content-Type", "application/json")
-            exchange.sendResponseHeaders(200, payload.size.toLong())
-            exchange.responseBody.use { it.write(payload) }
+        val listener = java.net.ServerSocket(0, 4, java.net.InetAddress.getByName("127.0.0.1"))
+        val serverThread = Thread {
+            while (!listener.isClosed) {
+                try {
+                    listener.accept().use { socket ->
+                        socket.soTimeout = 3000
+                        val reader = socket.getInputStream().bufferedReader(Charsets.US_ASCII)
+                        val line = reader.readLine() ?: return@use
+                        requests += line
+                        while (true) {
+                            val header = reader.readLine()
+                            if (header.isNullOrEmpty()) break
+                        }
+                        val payload = valid.toByteArray(Charsets.UTF_8)
+                        val header = "HTTP/1.1 200 OK\r\n" +
+                            "Content-Type: application/json\r\n" +
+                            "Content-Length: ${payload.size}\r\n" +
+                            "Connection: close\r\n\r\n"
+                        socket.getOutputStream().write(header.toByteArray(Charsets.US_ASCII))
+                        socket.getOutputStream().write(payload)
+                        socket.getOutputStream().flush()
+                    }
+                } catch (closed: java.net.SocketException) {
+                    if (!listener.isClosed) throw closed
+                }
+            }
+        }.apply {
+            isDaemon = true
+            start()
         }
-        server.start()
         try {
             val client = DesktopBridgeClient(DesktopBridgeClient.Config(
-                "http://127.0.0.1:${server.address.port}",
+                "http://127.0.0.1:${listener.localPort}",
                 "x".repeat(40), "desktop-1", "com.tencent.mm@UserHandle{0}"
             ))
             val first = client.pollOnce(nowMs = 1_001_000L)
@@ -91,7 +110,8 @@ class DesktopBridgeClientTest {
             client.pollOnce(nowMs = 1_001_000L)
             assertTrue(requests[2].contains("cursor=2"))
         } finally {
-            server.stop(0)
+            listener.close()
+            serverThread.join(2000)
         }
     }
 
