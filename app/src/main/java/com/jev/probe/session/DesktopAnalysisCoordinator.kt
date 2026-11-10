@@ -19,8 +19,8 @@ class DesktopAnalysisCoordinator(
     )
 
     private val analyzed = LinkedHashMap<String, String>()
-    private const val FRESH_MS = 120_000L
-    private const val MAX_PROCESSED = 200
+    private val FRESH_MS = 120_000L
+    private val MAX_PROCESSED = 200
 
     @Synchronized
     fun onAcceptedBatch(
