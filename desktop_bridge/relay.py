@@ -19,6 +19,8 @@ from pathlib import Path
 import secrets
 import threading
 import sys
+
+from manual_import import ManualImportController, run_manual_gui, valid_manual_account
 import time
 from urllib.parse import parse_qs, quote, urlsplit
 from urllib.request import Request, build_opener, HTTPRedirectHandler
@@ -343,6 +345,11 @@ def main(argv=None):
     parser.add_argument("--token-env", default="JEV_RELAY_TOKEN")
     parser.add_argument("--fixture", type=Path)
     parser.add_argument("--manual-stdin-test", action="store_true", help="one-shot, exact JEV_TEST_01 supplied by user via stdin; no clipboard monitoring")
+    parser.add_argument("--manual-stdin", action="store_true", help="user-reviewed text from stdin, with explicit label and direction")
+    parser.add_argument("--manual-gui", action="store_true", help="open local clipboard review UI; no background clipboard monitor")
+    parser.add_argument("--manual-session-label", help="user-declared label for --manual-stdin; not a verified contact")
+    parser.add_argument("--manual-direction", choices=("me", "other"),
+                        help="explicit direction for --manual-stdin; never inferred")
     parser.add_argument("--weflow-url")
     parser.add_argument("--weflow-token-env", default="WEFLOW_API_TOKEN")
     parser.add_argument("--allow-real-chats", action="store_true")
@@ -356,9 +363,17 @@ def main(argv=None):
     token = os.environ.get(args.token_env, "")
     if len(token) < 32:
         parser.error("set a random >=32-character relay token via the environment")
-    modes = sum((bool(args.fixture), bool(args.weflow_url), args.manual_stdin_test))
+    modes = sum((bool(args.fixture), bool(args.weflow_url), args.manual_stdin_test,
+                 args.manual_stdin, args.manual_gui))
     if modes != 1:
-        parser.error("select exactly one of --fixture, --weflow-url or --manual-stdin-test")
+        parser.error("select exactly one source mode")
+    if args.manual_stdin:
+        if not args.manual_session_label or not args.manual_direction:
+            parser.error("manual stdin requires explicit --manual-session-label and --manual-direction")
+    elif args.manual_session_label is not None or args.manual_direction is not None:
+        parser.error("manual label/direction arguments require --manual-stdin")
+    if (args.manual_stdin or args.manual_gui) and not valid_manual_account(args.account_ref):
+        parser.error("manual sources require a fixture-account or manual-* account reference")
     if args.manual_stdin_test and args.account_ref != "fixture-account":
         parser.error("manual test mode accepts only the synthetic fixture account")
     if args.weflow_url and not args.allow_real_chats:
@@ -383,6 +398,17 @@ def main(argv=None):
             parser.error(str(error))
         if store.append([event]) != 1:
             parser.error("manual test event rejected by relay")
+    elif args.manual_stdin:
+        try:
+            controller = ManualImportController(store)
+            controller.import_selected(
+                sys.stdin.read(MAX_TEXT + 1), args.manual_session_label, args.manual_direction
+            )
+        except (ValueError, UnicodeError):
+            parser.error("manual selected text, label or direction failed validation")
+    elif args.manual_gui:
+        # GUI reads clipboard only in a real user-triggered button handler.
+        pass
     else:
         source = WeFlowReader(
             args.weflow_url, os.environ.get(args.weflow_token_env, ""),
@@ -407,10 +433,20 @@ def main(argv=None):
         threading.Thread(target=work, daemon=True).start()
 
     server = ThreadingHTTPServer(("127.0.0.1", args.port), make_handler(store, token))
-    try:
-        server.serve_forever(poll_interval=0.5)
-    finally:
-        server.server_close()
+    if args.manual_gui:
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            run_manual_gui(store, server)
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join(timeout=3)
+    else:
+        try:
+            server.serve_forever(poll_interval=0.5)
+        finally:
+            server.server_close()
 
 
 if __name__ == "__main__":
