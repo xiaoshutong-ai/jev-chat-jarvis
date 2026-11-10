@@ -112,7 +112,7 @@ class ManualImportController:
         return True, event["session_id"]
 
 
-def run_manual_gui(store, server) -> None:
+def run_manual_gui(store, server, bearer_token: str) -> None:
     """Tkinter runs only when --manual-gui is explicitly selected.
 
     No clipboard change subscriptions, background clipboard access, API key
@@ -130,7 +130,9 @@ def run_manual_gui(store, server) -> None:
     main.pack(fill="both", expand=True)
 
     ttk.Label(main, text="复制聊天文字 → 预览 → 指定会话及方向 → 确认导入").pack(anchor="w")
-    ttk.Label(main, text="只读取本次手动复制；Windows 只导入，不调用模型或自动发送；Android 端若启用分析会调用已配置模型。").pack(anchor="w")
+    ttk.Label(main, text="只读取本次手动复制；Windows 不调用模型或发送微信消息。").pack(anchor="w")
+    ttk.Label(main, text="Android 开启分析后可能使用已配置模型；手机只会展示候选。").pack(anchor="w")
+    ttk.Label(main, text=f"本机端口：{server.server_address[1]}  |  配对标识：{store.account_ref}").pack(anchor="w")
     ttk.Label(main, text="会话标签（由你填写，不能作为微信账号身份证明）：").pack(anchor="w", pady=(12, 0))
     label = ttk.Entry(main, width=45)
     label.pack(fill="x")
@@ -172,7 +174,18 @@ def run_manual_gui(store, server) -> None:
     buttons.pack(anchor="w", pady=(10, 0))
     ttk.Button(buttons, text="1. 读取剪贴板", command=read_clipboard).pack(side="left", padx=(0, 10))
     ttk.Button(buttons, text="2. 确认导入 JEV", command=import_reviewed).pack(side="left")
-    ttk.Label(main, textvariable=status, wraplength=480).pack(anchor="w", pady=(12, 0))
+
+    def copy_pairing_token():
+        # On an explicit button tap only. Never put credentials in logs or files.
+        root.clipboard_clear()
+        root.clipboard_append(bearer_token)
+        root.update()
+        status.set("配对 Token 已复制；只能提供给已授权的 JEV Android 设置。")
+
+    ttk.Button(main, text="复制本机配对 Token（敏感）", command=copy_pairing_token).pack(
+        anchor="w", pady=(8, 0)
+    )
+    ttk.Label(main, textvariable=status, wraplength=480).pack(anchor="w", pady=(9, 0))
     try:
         root.mainloop()
     finally:
