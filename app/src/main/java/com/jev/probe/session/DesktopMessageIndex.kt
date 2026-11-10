@@ -103,8 +103,14 @@ object DesktopMessageIndex {
             .filter { it.profileScope == profileScope && it.accountRef == pairedAccountRef }
             .mapNotNull { session ->
                 val latest = session.messages.values.lastOrNull() ?: return@mapNotNull null
-                // A click notification reflects a received message, not our own send.
-                val lastReceived = session.messages.values.lastOrNull { it.direction == Direction.OTHER }
+                // A manually declared session has no verified WeChat contact ID.
+                // Never supply a fingerprint that might make notification hints
+                // appear to authenticate this user-selected clipboard text.
+                val lastReceived = if (session.sessionId.startsWith(
+                        SessionBindingResolver.USER_SELECTED_SESSION_PREFIX
+                    )) null else session.messages.values.lastOrNull {
+                    it.direction == Direction.OTHER
+                }
                 SessionBindingResolver.DesktopConversation(
                     profileScope = profileScope,
                     sessionId = session.sessionId,
