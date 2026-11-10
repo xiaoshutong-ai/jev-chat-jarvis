@@ -100,6 +100,8 @@ class WeFlowReader:
         if (parsed.scheme != "http" or parsed.hostname not in ("127.0.0.1", "localhost")
                 or parsed.username or parsed.password):
             raise ValueError("WeFlow source must be local loopback HTTP")
+        if not token:
+            raise ValueError("WeFlow token must be set for real source")
         if not chat_ids or len(chat_ids) > 10 or any(not c or len(c) > 200 for c in chat_ids):
             raise ValueError("explicit allowlisted conversation IDs required")
         self.base_url = url.rstrip("/")
@@ -125,11 +127,15 @@ class WeFlowReader:
     def poll_once(self) -> list[dict]:
         all_items = []
         for chat in self.chat_ids:
+            if len(all_items) >= MAX_POLL_ITEMS:
+                break
             data = self._get("/api/v1/messages?talker=" + quote(chat, safe="") + "&limit=40")
             messages = data.get("messages", [])
             if not isinstance(messages, list):
                 continue
             for item in messages:
+                if len(all_items) >= MAX_POLL_ITEMS:
+                    break
                 if not isinstance(item, dict) or item.get("localType") != 1:
                     continue
                 msg_id = str(item.get("serverId") or item.get("localId") or "")
@@ -139,7 +145,6 @@ class WeFlowReader:
                     continue
                 if msg_id in self._seen[chat]:
                     continue
-                self._seen[chat].add(msg_id)
                 record = {
                     "account_ref": self.account_ref,
                     "session_id": chat,
@@ -150,6 +155,7 @@ class WeFlowReader:
                     "time_ms": create_time * 1000,
                 }
                 if valid_item(record, self.account_ref):
+                    self._seen[chat].add(msg_id)
                     all_items.append(record)
             if len(self._seen[chat]) > 4000:
                 self._seen[chat].clear()
