@@ -1,5 +1,10 @@
 """Focused tests: explicit clipboard import does not read WeChat or files."""
 import pathlib
+import http.client
+import json
+import os
+import socket
+import subprocess
 import sys
 import time
 import unittest
@@ -90,6 +95,70 @@ class ManualImportTest(unittest.TestCase):
         self.assertEqual(1, len(events))
         self.assertEqual("manual-pilot", events[0]["account_ref"])
         self.assertEqual("user explicitly pasted this", events[0]["text"])
+
+
+class ManualCliIntegrationTest(unittest.TestCase):
+    def test_missing_direction_is_rejected_before_stdin_is_read(self):
+        relay = pathlib.Path(__file__).resolve().parents[1] / "relay.py"
+        result = subprocess.run(
+            [sys.executable, str(relay), "--account-ref", "manual-pilot",
+             "--manual-stdin", "--manual-session-label", "同学甲"],
+            input="SYNTHETIC_OTHER_MESSAGE\n",
+            text=True, capture_output=True, timeout=6,
+            env={**os.environ, "JEV_RELAY_TOKEN": "z" * 40}
+        )
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn("requires explicit", result.stderr)
+        self.assertNotIn("SYNTHETIC_OTHER_MESSAGE", result.stderr)
+
+    def test_explicit_inbound_stdin_is_authenticated_localhost_only(self):
+        relay = pathlib.Path(__file__).resolve().parents[1] / "relay.py"
+        with socket.socket() as probe:
+            probe.bind(("127.0.0.1", 0))
+            port = probe.getsockname()[1]
+        token = "L" * 40
+        child = subprocess.Popen(
+            [sys.executable, str(relay), "--account-ref", "manual-pilot",
+             "--manual-stdin", "--manual-session-label", "合成同学",
+             "--manual-direction", "other", "--port", str(port)],
+            stdin=subprocess.PIPE, stdout=subprocess.DEVNULL,
+            stderr=subprocess.PIPE, env={**os.environ, "JEV_RELAY_TOKEN": token},
+        )
+        try:
+            assert child.stdin is not None
+            child.stdin.write("SYNTHETIC_OTHER_MESSAGE\n".encode())
+            child.stdin.close()
+            result = None
+            for _ in range(50):
+                if child.poll() is not None:
+                    self.fail("relay exited before first poll")
+                try:
+                    conn = http.client.HTTPConnection("127.0.0.1", port, timeout=1)
+                    conn.request("GET", "/v1/poll?cursor=0&limit=2",
+                                 headers={"Authorization": "Bearer " + token})
+                    response = conn.getresponse()
+                    result = json.loads(response.read())
+                    self.assertEqual(200, response.status)
+                    conn.close()
+                    break
+                except OSError:
+                    time.sleep(0.05)
+            self.assertIsNotNone(result, "relay never opened loopback port")
+            self.assertEqual(1, len(result["items"]))
+            event = result["items"][0]
+            self.assertEqual("other", event["direction"])
+            self.assertTrue(event["session_id"].startswith(MANUAL_SESSION_PREFIX))
+            self.assertIn("联系人未核验", event["display_name"])
+            self.assertEqual("SYNTHETIC_OTHER_MESSAGE", event["text"])
+        finally:
+            child.terminate()
+            try:
+                child.wait(timeout=3)
+            except subprocess.TimeoutExpired:
+                child.kill()
+                child.wait(timeout=3)
+            if child.stderr:
+                child.stderr.close()
 
 
 if __name__ == "__main__":
