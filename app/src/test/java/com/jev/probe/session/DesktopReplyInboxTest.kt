@@ -26,6 +26,29 @@ class DesktopReplyInboxTest {
         assertTrue(DesktopReplyInbox.list("a", "b", 1_601_000).isEmpty())
     }
 
+    @Test fun visibleImeCandidateExpiresOrGetsReplacedBeforeTap() {
+        val scope = "com.tencent.mm@UserHandle{0}"
+        val account = "desktop-1"
+        val session = "wxid-a"
+        assertTrue(DesktopReplyInbox.publishTrusted(
+            scope, account, session, "张三", listOf("旧回复"), 1_000_000))
+        assertTrue(DesktopReplyInbox.isActiveCandidate(
+            scope, account, session, 1_000_000, "旧回复", 1_000_100))
+        assertFalse(DesktopReplyInbox.isActiveCandidate(
+            scope, "desktop-2", session, 1_000_000, "旧回复", 1_000_100))
+        assertTrue(DesktopReplyInbox.publishTrusted(
+            scope, account, session, "张三", listOf("新回复"), 1_000_200))
+        assertFalse(DesktopReplyInbox.isActiveCandidate(
+            scope, account, session, 1_000_000, "旧回复", 1_000_300))
+        assertTrue(DesktopReplyInbox.isActiveCandidate(
+            scope, account, session, 1_000_200, "新回复", 1_000_300))
+        assertFalse(DesktopReplyInbox.isActiveCandidate(
+            scope, account, session, 1_000_200, "新回复", 1_601_000))
+        DesktopReplyInbox.consume(scope, account, session)
+        assertFalse(DesktopReplyInbox.isActiveCandidate(
+            scope, account, session, 1_000_200, "新回复", 1_000_300))
+    }
+
     @Test fun updatingOneSessionCannotReplaceAnother() {
         assertTrue(DesktopReplyInbox.publishTrusted("p", "acc", "one", "First", listOf("r1"), 1_000_000))
         assertTrue(DesktopReplyInbox.publishTrusted("p", "acc", "two", "Second", listOf("r2"), 1_000_010))
