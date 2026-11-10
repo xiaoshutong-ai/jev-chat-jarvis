@@ -163,6 +163,117 @@ class RelayStoreTest(unittest.TestCase):
         with self.assertRaises(ValueError):
             reader.poll_once()
 
+    def test_weflow_pins_watermark_until_page_is_complete(self):
+        reader = WeFlowReader("http://127.0.0.1:5031", "local-token",
+                              "fixture-account", ["demo-a"], "self")
+        now = int(time.time())
+        paths = []
+        def fake_get(path):
+            from urllib.parse import parse_qs, urlsplit
+            paths.append(path)
+            qs = parse_qs(urlsplit(path).query)
+            since = int(qs["since"][0])
+            offset = int(qs["offset"][0])
+            amount = 25 if offset == 0 else 5
+            return {
+                "meta": {"name": "Demo"},
+                "messages": [
+                    {"platformMessageId": str(offset + i),
+                     "sender": "other", "type": 0, "content": "ok",
+                     "timestamp": now} for i in range(amount)
+                ],
+                "sync": {
+                    "hasMore": offset == 0, "nextSince": since,
+                    "nextOffset": offset + amount, "watermark": now
+                }
+            }
+        reader._get = fake_get
+        first = reader.poll_once()
+        reader.acknowledge(first)
+        self.assertEqual(now, reader._watermarks["demo-a"])
+        second = reader.poll_once()
+        self.assertIn(f"end={now}", paths[1])
+        reader.acknowledge(second)
+        self.assertNotIn("demo-a", reader._watermarks)
+        reader.poll_once()
+        self.assertNotIn("&end=", paths[2])
+
+    def test_relay_paged_output_never_exceeds_mobile_byte_limit(self):
+        store = RelayStore("fixture-account")
+        long_records = [dict(item(str(i)), text="x" * 4000) for i in range(85)]
+        self.assertEqual(85, store.append(long_records))
+        cursor = 0
+        received = []
+        while True:
+            page = store.poll(cursor, store.generation, 100)
+            encoded = json.dumps(page, ensure_ascii=False).encode("utf-8")
+            self.assertLess(len(encoded), 200_000)
+            received.extend([msg["message_id"] for msg in page["items"]])
+            self.assertFalse(page["gap"])
+            cursor = page["cursor"]
+            if not page["has_more"]:
+                break
+        self.assertEqual(85, len(received))
+        self.assertEqual(85, len(set(received)))
+
+    def test_real_http_transport_against_synthetic_chatlab_upstream(self):
+        from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+        from urllib.parse import parse_qs, unquote, urlsplit
+        now = int(time.time())
+        seen_requests = []
+        class MockWeFlow(BaseHTTPRequestHandler):
+            def log_message(self, *_):
+                pass
+            def do_GET(self):
+                if self.headers.get("Authorization") != "Bearer local-test-token":
+                    self.send_response(401)
+                    self.end_headers()
+                    return
+                split = urlsplit(self.path)
+                session = unquote(split.path.split("/sessions/", 1)[1].split("/messages", 1)[0])
+                query = parse_qs(split.query)
+                seen_requests.append((session, query))
+                since = int(query["since"][0])
+                payload = {
+                    "chatlab": {"version": "0.0.2"},
+                    "meta": {"name": "Synthetic-" + session},
+                    "messages": [{
+                        "sender": "other", "type": 0,
+                        "timestamp": now,
+                        "content": "synthetic-" + session,
+                        "platformMessageId": "msg-" + session
+                    }],
+                    "sync": {"hasMore": False, "nextSince": since,
+                             "nextOffset": 1, "watermark": now}
+                }
+                raw = json.dumps(payload).encode()
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(raw)))
+                self.end_headers()
+                self.wfile.write(raw)
+        upstream = ThreadingHTTPServer(("127.0.0.1", 0), MockWeFlow)
+        thread = threading.Thread(target=upstream.serve_forever, daemon=True)
+        thread.start()
+        try:
+            url = f"http://127.0.0.1:{upstream.server_port}"
+            reader = WeFlowReader(url, "local-test-token", "fixture-account",
+                                  ["demo-a", "demo-b"], "self")
+            store = RelayStore("fixture-account")
+            batch = reader.poll_once()
+            self.assertEqual(2, len(batch))
+            self.assertEqual(2, store.append(batch))
+            reader.acknowledge(batch)
+            page = store.poll(0, store.generation)
+            self.assertEqual({"demo-a", "demo-b"},
+                             {m["session_id"] for m in page["items"]})
+            self.assertEqual(2, len(seen_requests))
+            self.assertTrue(all(q["limit"] for _, q in seen_requests))
+        finally:
+            upstream.shutdown()
+            upstream.server_close()
+            thread.join(timeout=3)
+
     def test_weflow_input_requires_loopback_allowlist_and_own_sender_id(self):
         for base in ("https://example.com", "http://192.168.1.2:5031",
                      "http://user:pass@127.0.0.1:5031",
