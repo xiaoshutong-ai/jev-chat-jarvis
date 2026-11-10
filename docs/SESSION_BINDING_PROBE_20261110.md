@@ -19,8 +19,14 @@
 
 本轮已在独立 Kotlin/JVM 环境编译此源文件，并运行 23/23 条断言；另有 7 项 JUnit 兼容定向场景测试通过。**未执行 Android Gradle、CI、真机或微信集成验收。**
 
+## 本次新增 Android 事件采集源（SOURCE_ONLY）
+- 在原 `WeChatNotificationListenerService` 上接线：监听标准 `onNotificationRemoved(..., reason)`，仅 `REASON_CLICK` 留下一个短期提示。
+- `NotificationClickTracker` 在内存中关联 Android 通知 key、profile 和消息摘要的 SHA-256 指纹；其他原因移除会被丢弃；不输出日志、原文或执行微信 UI 操作。
+- 该提示**只允许生成建议，不能把点击事件当作当前聊天的身份证明**；下一次在微信内手动换聊天后仍需再次确认。
+- 已在隔离 JVM 运行 `NotificationClickTracker` 的 11/11 条定向断言；应用级编译和真实通知事件仍 NOT_RUN。
+
 ## 下一项接线（无需新增风控权限）
-1. Android `WeChatNotificationListenerService` 只读记录 `onNotificationRemoved(..., reason=REASON_CLICK)` 的 **是否发生、时间、profile 和 notification key**；有值时记录 `shortcutId`/`locusId` 的**存在性**，不落盘聊天原文。
+1. 对已接入的通知点击事件，在 vivo 微信 A/B 上验证 `REASON_CLICK` 是否真实产生，并只在需要时补充 `shortcutId` / `locusId` 存在性诊断。
 2. 从现有 Windows 侧使用者已授权的数据入口导入结构化 `accountScope/sessionId/messageId/timestamp/direction/content`。历史与实时事件按稳定消息 ID 去重；不把微信解密/注入组件打包到 JEV；许可与数据边界单独评估。
 3. 在 JEV IME `onStartInput` 获取应用 package 和 Android profile，并为每次聚焦分配新的 editor epoch；随后按纯判定器建议候选。**不可将输入框 ID、同名联系人或时间邻近视为可靠身份确认。**
 4. 候选 UI 显示目标联系人与来源；用户在不确定时点一次确认。候选绑定/失效后才能逐步接到写入链，不改变“用户手动发送”的既有约束。
