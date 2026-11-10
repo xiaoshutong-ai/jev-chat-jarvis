@@ -437,7 +437,7 @@ def main(argv=None):
         thread = threading.Thread(target=server.serve_forever, daemon=True)
         thread.start()
         try:
-            run_manual_gui(store, server)
+            run_manual_gui(store, server, token)
         finally:
             server.shutdown()
             server.server_close()
