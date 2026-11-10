@@ -46,30 +46,30 @@ class DesktopBridgeClient(private val config: Config) {
             val json = JSONObject(body)
             require(json.optInt("version", -1) == 1) { "unsupported relay version" }
             require((json.opt("account_ref") as? String) == expectedAccountRef) { "account mismatch" }
-            val generation = json.opt("generation") as? String ?: error("missing generation")
+            val generation = json.opt("generation") as? String ?: throw IllegalArgumentException("missing generation")
             require(generation.length == 16 && generation.all { it.isDigit() || it in 'a'..'f' }) {
                 "invalid relay generation"
             }
-            val cursor = numericLong(json.opt("cursor")) ?: error("invalid cursor")
+            val cursor = numericLong(json.opt("cursor")) ?: throw IllegalArgumentException("invalid cursor")
             require(cursor >= 0L) { "negative cursor" }
-            val gap = json.opt("gap") as? Boolean ?: error("missing gap flag")
-            val hasMore = json.opt("has_more") as? Boolean ?: error("missing has_more flag")
-            val array = json.optJSONArray("items") ?: error("missing items")
+            val gap = json.opt("gap") as? Boolean ?: throw IllegalArgumentException("missing gap flag")
+            val hasMore = json.opt("has_more") as? Boolean ?: throw IllegalArgumentException("missing has_more flag")
+            val array = json.optJSONArray("items") ?: throw IllegalArgumentException("missing items")
             require(array.length() <= MAX_ITEMS) { "too many messages" }
             val messages = ArrayList<DesktopMessageIndex.Incoming>(array.length())
             for (i in 0 until array.length()) {
-                val item = array.optJSONObject(i) ?: error("invalid message type")
-                val account = item.opt("account_ref") as? String ?: error("missing source account")
+                val item = array.optJSONObject(i) ?: throw IllegalArgumentException("invalid message type")
+                val account = item.opt("account_ref") as? String ?: throw IllegalArgumentException("missing source account")
                 require(account == expectedAccountRef) { "item account mismatch" }
-                val session = item.opt("session_id") as? String ?: error("missing session")
-                val id = item.opt("message_id") as? String ?: error("missing message ID")
-                val name = item.opt("display_name") as? String ?: error("missing display name")
-                val text = item.opt("text") as? String ?: error("missing message text")
-                val timestamp = numericLong(item.opt("time_ms")) ?: error("invalid timestamp")
+                val session = item.opt("session_id") as? String ?: throw IllegalArgumentException("missing session")
+                val id = item.opt("message_id") as? String ?: throw IllegalArgumentException("missing message ID")
+                val name = item.opt("display_name") as? String ?: throw IllegalArgumentException("missing display name")
+                val text = item.opt("text") as? String ?: throw IllegalArgumentException("missing message text")
+                val timestamp = numericLong(item.opt("time_ms")) ?: throw IllegalArgumentException("invalid timestamp")
                 val direction = when (item.opt("direction") as? String) {
                     "me" -> DesktopMessageIndex.Direction.ME
                     "other" -> DesktopMessageIndex.Direction.OTHER
-                    else -> error("invalid direction")
+                    else -> throw IllegalArgumentException("invalid direction")
                 }
                 require(session.isNotBlank() && session.length <= 200 &&
                     id.isNotBlank() && id.length <= 200 && name.length <= 120 &&
@@ -127,6 +127,11 @@ class DesktopBridgeClient(private val config: Config) {
             }
             val batch = parseResponse(body, config.pairedAccountRef)
             require(!batch.gap) { "desktop relay gap requires backfill" }
+            // Reject an entire poll if any item is outside the index contract.
+            // A zero insert count is otherwise indistinguishable from all duplicates.
+            require(batch.messages.all {
+                it.timeMs <= nowMs + 120_000L && it.timeMs > 0L
+            }) { "message timestamp outside the trusted window" }
             // No persistence and no automatic AI/provider traffic at this stage.
             if (batch.messages.isNotEmpty()) {
                 val inserted = DesktopMessageIndex.mergeTrusted(
