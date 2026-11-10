@@ -132,13 +132,8 @@ class DesktopBridgeClient(private val config: Config) {
             require(batch.messages.all {
                 it.timeMs <= nowMs + 120_000L && it.timeMs > 0L
             }) { "message timestamp outside the trusted window" }
-            // No persistence and no automatic AI/provider traffic at this stage.
-            if (batch.messages.isNotEmpty()) {
-                val inserted = DesktopMessageIndex.mergeTrusted(
-                    config.androidProfileScope, config.pairedAccountRef, batch.messages, nowMs
-                )
-                require(inserted >= 0) { "untrusted desktop batch" }
-            }
+            // Transport only. The caller chooses when the authenticated data
+            // may enter the per-profile index or trigger opt-in model analysis.
             generation = batch.generation
             cursor = batch.cursor
             return batch
