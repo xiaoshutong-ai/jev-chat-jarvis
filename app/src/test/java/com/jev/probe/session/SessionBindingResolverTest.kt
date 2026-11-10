@@ -76,4 +76,17 @@ class SessionBindingResolverTest {
         assertFalse(R.canInsert(editor, bound, "wxid-a", 1_060_201))
         assertNull(R.confirm(editor, suggestion, "wxid-a", 1_061_000))
     }
+
+    @Test fun userSelectedSessionNeverSpoofsNotificationOpenHint() {
+        val manual = a.copy(
+            sessionId = R.USER_SELECTED_SESSION_PREFIX + "f7b0d0349e2a",
+            displayName = "手动选择：同学甲（联系人未核验）"
+        )
+        // Even identical fingerprints and timing cannot authenticate a
+        // user-labelled clipboard session as the opened WeChat conversation.
+        assertEquals(R.Suggestion.NoMatch,
+            R.suggest(editor, clicked, listOf(manual)))
+        assertTrue(R.suggest(editor, clicked, listOf(a, manual)) is R.Suggestion.One)
+        assertFalse(R.canInsert(editor, null, manual.sessionId, 1_000_200))
+    }
 }
