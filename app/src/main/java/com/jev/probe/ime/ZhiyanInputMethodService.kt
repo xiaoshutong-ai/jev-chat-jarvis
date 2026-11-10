@@ -102,7 +102,7 @@ class ZhiyanInputMethodService : InputMethodService() {
     private fun isSyntheticDebugEditor(info: EditorInfo?): Boolean =
         (applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE) != 0 &&
             info?.packageName == packageName &&
-            info.privateImeOptions == "com.jev.probe.debug.SYNTHETIC_CHAT_V1"
+            info?.privateImeOptions == "com.jev.probe.debug.SYNTHETIC_CHAT_V1"
 
     private fun isExpectedChatEditor(info: EditorInfo?): Boolean =
         info?.packageName == SessionBindingResolver.WECHAT_PACKAGE ||
