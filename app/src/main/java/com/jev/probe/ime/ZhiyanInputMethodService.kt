@@ -5,6 +5,7 @@ import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.inputmethodservice.InputMethodService
 import android.os.Build
+import android.content.pm.ApplicationInfo
 import android.util.TypedValue
 import android.view.Gravity
 import android.view.View
@@ -97,9 +98,19 @@ class ZhiyanInputMethodService : InputMethodService() {
         return outer
     }
 
+    /** Debug-only, app-owned synthetic editor: not a WeChat UI or fake WeChat package. */
+    private fun isSyntheticDebugEditor(info: EditorInfo?): Boolean =
+        (applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE) != 0 &&
+            info?.packageName == packageName &&
+            info.privateImeOptions == "com.jev.probe.debug.SYNTHETIC_CHAT_V1"
+
+    private fun isExpectedChatEditor(info: EditorInfo?): Boolean =
+        info?.packageName == SessionBindingResolver.WECHAT_PACKAGE ||
+            isSyntheticDebugEditor(info)
+
     private fun refreshEditorIdentity(info: EditorInfo?) {
         editorEpoch = if (editorEpoch == Long.MAX_VALUE) 1L else editorEpoch + 1
-        focusedWechatEditor = if (info?.packageName == SessionBindingResolver.WECHAT_PACKAGE) {
+        focusedWechatEditor = if (isExpectedChatEditor(info)) {
             // The IME and notification listener must run in the same Android user
             // for this string to match. Clone-user delivery remains unverified.
             val scope = SessionBindingResolver.WECHAT_PACKAGE +
@@ -204,8 +215,7 @@ class ZhiyanInputMethodService : InputMethodService() {
                     box.addView(replyButton((index + 1).toString() + ". " + reply, index == 0) {
                         val current = focusedWechatEditor
                         val now = System.currentTimeMillis()
-                        if (current != focus || currentInputEditorInfo?.packageName !=
-                            SessionBindingResolver.WECHAT_PACKAGE) {
+                        if (current != focus || !isExpectedChatEditor(currentInputEditorInfo)) {
                             toastLocal("输入窗口已切换，请重新选择会话")
                             return@replyButton
                         }
@@ -274,7 +284,7 @@ class ZhiyanInputMethodService : InputMethodService() {
 
     private fun commitCandidate(text: String): Boolean {
         if (focusedWechatEditor != null &&
-            currentInputEditorInfo?.packageName != SessionBindingResolver.WECHAT_PACKAGE) {
+            !isExpectedChatEditor(currentInputEditorInfo)) {
             toastLocal("当前输入框已变化，未填入")
             return false
         }
