@@ -73,4 +73,34 @@ class DesktopAnalysisCoordinatorTest {
             listOf(incoming), true, 1_000_100))
         assertTrue(DesktopReplyInbox.list(scope, account, 1_000_200).isEmpty())
     }
+
+    @Test fun manualInboundOnlyGeneratesWithOptIn() {
+        val message = DesktopMessageIndex.Incoming(
+            accountRef = account,
+            sessionId = SessionBindingResolver.USER_SELECTED_SESSION_PREFIX + "test01",
+            messageId = "manual-unique",
+            displayName = "手动选择：同学甲（联系人未核验）",
+            direction = DesktopMessageIndex.Direction.OTHER,
+            text = "测试问题",
+            timeMs = 1_000_000L
+        )
+        DesktopMessageIndex.mergeTrusted(scope, account, listOf(message), 1_000_050)
+        var calls = 0
+        val coordinator = DesktopAnalysisCoordinator {
+            calls++
+            assertEquals(message.sessionId, it.sessionId)
+            listOf("测试回复")
+        }
+        assertEquals(0, coordinator.onAcceptedBatch(scope, account,
+            listOf(message), enabledByUser = false, nowMs = 1_000_100))
+        assertEquals(0, calls)
+        assertEquals(1, coordinator.onAcceptedBatch(scope, account,
+            listOf(message), enabledByUser = true, nowMs = 1_000_200))
+        assertEquals(1, calls)
+        assertEquals(0, coordinator.onAcceptedBatch(scope, account,
+            listOf(message), enabledByUser = true, nowMs = 1_000_300))
+        val bundle = DesktopReplyInbox.list(scope, account, 1_000_300).single()
+        assertEquals(message.sessionId, bundle.sessionId)
+        assertTrue(bundle.displayName.contains("联系人未核验"))
+    }
 }
