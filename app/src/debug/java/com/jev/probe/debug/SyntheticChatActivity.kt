@@ -29,6 +29,13 @@ import java.util.concurrent.Executors
 class SyntheticChatActivity : Activity() {
     private val worker = Executors.newSingleThreadExecutor()
     private var pipeline: DesktopSyncPipeline? = null
+
+    /** Synthetic-only status, < 128 chars and never includes chat text or token. */
+    private fun recordSyntheticState(value: String) {
+        if (value.length <= 128 && value.matches(Regex("[A-Za-z0-9_= ]+"))) {
+            runCatching { getFileStreamPath("jev_synthetic_state.txt").writeText(value) }
+        }
+    }
     private lateinit var status: TextView
     private lateinit var focusStatus: TextView
     private lateinit var editorA: EditText
@@ -65,6 +72,7 @@ class SyntheticChatActivity : Activity() {
             textSize = 12f
             setTextColor(Color.DKGRAY)
         })
+        recordSyntheticState("SYNC=NOT_RUN")
         status = TextView(this).apply {
             text = "SYNC=NOT_RUN"
             textSize = 13f
@@ -145,6 +153,7 @@ class SyntheticChatActivity : Activity() {
             return
         }
         status.text = "SYNC=CONNECTING"
+        recordSyntheticState("SYNC=CONNECTING"
         worker.execute {
             var candidate: DesktopSyncPipeline? = null
             try {
@@ -161,15 +170,21 @@ class SyntheticChatActivity : Activity() {
                 val result = candidate.pollOnce(autoAnalysisApproved = true)
                 pipeline = candidate
                 val sessions = DesktopMessageIndex.conversations(scope, account)
+                val evidence = "SYNC=PASS sessions=" + sessions.size +
+                    " analyzed=" + result.analyzedSessions +
+                    " messages=" + result.accepted
+                // Persist the *synthetic-only* status on the worker thread even
+                // if the emulator UI main thread is temporarily unresponsive.
+                recordSyntheticState(evidence)
                 runOnUiThread {
-                    status.text = "SYNC=PASS sessions=" + sessions.size +
-                        " analyzed=" + result.analyzedSessions +
-                        " messages=" + result.accepted
+                    status.text = evidence
                     focusChat(editorA)
                 }
             } catch (failure: Exception) {
                 candidate?.stop()
-                runOnUiThread { status.text = "SYNC=ERROR " + failure.javaClass.simpleName }
+                val errorState = "SYNC=ERROR " + failure.javaClass.simpleName
+                recordSyntheticState(errorState)
+                runOnUiThread { status.text = errorState }
             }
         }
     }
@@ -182,6 +197,7 @@ class SyntheticChatActivity : Activity() {
             DesktopPairingState.revoke(scope)
             DesktopReplyInbox.clearScoped(scope, account)
             DesktopMessageIndex.clearScoped(scope, account)
+            recordSyntheticState("SYNC=REVOKED")
             runOnUiThread { status.text = "SYNC=REVOKED"; focusChat(editorA) }
         }
     }
