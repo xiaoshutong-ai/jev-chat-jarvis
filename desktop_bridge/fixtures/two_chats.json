@@ -1,0 +1,20 @@
+[
+  {
+    "account_ref": "fixture-account",
+    "session_id": "demo-alice",
+    "message_id": "demo-001",
+    "display_name": "演示联系人甲",
+    "direction": "other",
+    "text": "周末方便聊一下吗？",
+    "time_ms": 1760000123000
+  },
+  {
+    "account_ref": "fixture-account",
+    "session_id": "demo-bob",
+    "message_id": "demo-002",
+    "display_name": "演示联系人乙",
+    "direction": "other",
+    "text": "资料我已经发给你了。",
+    "time_ms": 1760000130000
+  }
+]
