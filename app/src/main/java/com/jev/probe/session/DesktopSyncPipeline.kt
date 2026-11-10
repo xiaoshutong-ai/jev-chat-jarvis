@@ -10,12 +10,19 @@ package com.jev.probe.session
 class DesktopSyncPipeline(
     private val config: DesktopBridgeClient.Config,
     generate: (DesktopAnalysisCoordinator.ConversationContext) -> List<String>,
-    private val source: (Long) -> DesktopBridgeClient.PollBatch
+    private val source: (Long) -> DesktopBridgeClient.PollBatch,
+    private val acknowledge: (DesktopBridgeClient.PollBatch) -> Unit = {}
 ) {
+    private constructor(
+        config: DesktopBridgeClient.Config,
+        generate: (DesktopAnalysisCoordinator.ConversationContext) -> List<String>,
+        client: DesktopBridgeClient
+    ) : this(config, generate, client::pollOnce, client::acknowledgeProcessed)
+
     constructor(
         config: DesktopBridgeClient.Config,
         generate: (DesktopAnalysisCoordinator.ConversationContext) -> List<String>
-    ) : this(config, generate, DesktopBridgeClient(config)::pollOnce)
+    ) : this(config, generate, DesktopBridgeClient(config))
 
     private val coordinator = DesktopAnalysisCoordinator(generate)
     private val ownerId = java.util.UUID.randomUUID().toString()
@@ -40,17 +47,25 @@ class DesktopSyncPipeline(
                 it.timeMs > 0L && it.timeMs <= nowMs + 120_000L
         }) { "cross-account or future source data rejected" }
 
-        val inserted = DesktopMessageIndex.mergeTrusted(
+        // Validate *before* index mutation or relay acknowledgement. A return
+        // value of zero from mergeTrusted can mean invalid data OR duplicates.
+        require(DesktopMessageIndex.acceptsTrustedBatch(
             config.androidProfileScope, config.pairedAccountRef, batch.messages, nowMs
-        )
+        )) { "invalid account/profile or message in desktop batch" }
         require(DesktopPairingState.establishAfterVerifiedPairing(
             config.androidProfileScope, config.pairedAccountRef, ownerId
         )) { "invalid Android profile" }
+        val inserted = DesktopMessageIndex.mergeTrusted(
+            config.androidProfileScope, config.pairedAccountRef, batch.messages, nowMs
+        )
 
         val generated = coordinator.onAcceptedBatch(
             config.androidProfileScope, config.pairedAccountRef,
             batch.messages, autoAnalysisApproved, nowMs
         )
+        // Acknowledgement is the last step; on any earlier failure the next
+        // poll retrieves the same window rather than skipping unread messages.
+        acknowledge(batch)
         return Outcome(inserted, generated, batch.cursor, batch.hasMore)
     }
 
