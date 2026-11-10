@@ -30,6 +30,7 @@ class SyntheticChatActivity : Activity() {
     private val worker = Executors.newSingleThreadExecutor()
     private var pipeline: DesktopSyncPipeline? = null
     private lateinit var status: TextView
+    private lateinit var focusStatus: TextView
     private lateinit var editorA: EditText
     private lateinit var editorB: EditText
     private lateinit var labelA: TextView
@@ -71,6 +72,12 @@ class SyntheticChatActivity : Activity() {
             contentDescription = "synthetic_sync_status"
         }
         column.addView(status)
+        focusStatus = TextView(this).apply {
+            text = "FOCUS=NONE"
+            textSize = 12f
+            contentDescription = "synthetic_focus_status"
+        }
+        column.addView(focusStatus)
 
         val buttons = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
         buttons.addView(Button(this).apply {
@@ -122,7 +129,7 @@ class SyntheticChatActivity : Activity() {
         val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
         imm.restartInput(edit) // new editor epoch; old candidate button must become stale
         edit.post { imm.showSoftInput(edit, InputMethodManager.SHOW_IMPLICIT) }
-        status.text = "FOCUS=" + if (edit === editorA) "A" else "B"
+        focusStatus.text = "FOCUS=" + if (edit === editorA) "A" else "B"
     }
 
     private fun pollFixture() {
