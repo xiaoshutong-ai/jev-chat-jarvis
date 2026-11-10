@@ -9,7 +9,7 @@ import time
 import unittest
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
-from relay import RelayStore, WeFlowReader, make_handler, valid_item
+from relay import RelayStore, WeFlowReader, make_handler, valid_item, explicit_user_selected_test_message
 
 
 def item(message_id="1", account_ref="fixture-account", session_id="demo-a"):
@@ -291,6 +291,52 @@ class RelayStoreTest(unittest.TestCase):
         response = store.poll(0, "")
         self.assertTrue(response["gap"])
         self.assertEqual(["2", "3"], [r["message_id"] for r in response["items"]])
+
+
+class ExplicitUserSelectedTest(unittest.TestCase):
+    def test_user_selected_filehelper_marker_is_outgoing_and_not_real_source(self):
+        message = explicit_user_selected_test_message(
+            "  JEV_TEST_01\r\n", "fixture-account", 1_000_000
+        )
+        self.assertEqual("manual-pilot-filehelper", message["session_id"])
+        self.assertEqual("me", message["direction"])
+        self.assertEqual("JEV_TEST_01", message["text"])
+        self.assertIn("手动选择", message["display_name"])
+        self.assertTrue(message["message_id"].startswith("manual-"))
+        self.assertTrue(valid_item(message, "fixture-account"))
+
+    def test_manual_mode_rejects_any_other_clipboard_and_account(self):
+        for text in ("private message", "JEV_TEST_01 plus chat", "", "JEV_TEST_02"):
+            with self.assertRaises(ValueError):
+                explicit_user_selected_test_message(text, "fixture-account", 1_000_000)
+        with self.assertRaises(ValueError):
+            explicit_user_selected_test_message("JEV_TEST_01", "my-real-account", 1_000_000)
+        with self.assertRaises(ValueError):
+            explicit_user_selected_test_message("JEV_TEST_01" + " " * 200, "fixture-account", 1_000_000)
+
+    def test_manual_message_is_memory_only_and_consumable_via_authenticated_http(self):
+        store = RelayStore("fixture-account")
+        self.assertEqual(1, store.append([
+            explicit_user_selected_test_message("JEV_TEST_01", "fixture-account")
+        ]))
+        server = ThreadingHTTPServer(("127.0.0.1", 0), make_handler(store, "q" * 40))
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            conn = http.client.HTTPConnection("127.0.0.1", server.server_port, timeout=3)
+            conn.request("GET", "/v1/poll", headers={"Authorization": "Bearer " + "q" * 40})
+            response = conn.getresponse()
+            result = json.loads(response.read())
+            conn.close()
+            self.assertEqual(200, response.status)
+            self.assertEqual(1, len(result["items"]))
+            self.assertEqual("me", result["items"][0]["direction"])
+            self.assertEqual("JEV_TEST_01", result["items"][0]["text"])
+            self.assertFalse(result["gap"])
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join(timeout=3)
 
 
 class RelayHttpTest(unittest.TestCase):
