@@ -107,3 +107,20 @@ BLUE_STATUS: BLUE_FINDINGS（关键风险是错会话填入、采集来源信任
 
 **剩余业务验收**：Windows 的结构化真实消息来源目前未启用（WeFlow/其他第三方解密组件未安装/未授权）；Android 与 Windows 的公开网络安全配对尚未做正式运营配置；手机当前联系人无官方确定性 ID，因此 IME 仍采用显式标签确认，不能宣称零交互全自动。PR #21 继续 Draft，不合入、不公开发布。
 
+
+## 2026-11-10 x86_64 现有模拟器验收
+
+代码 HEAD `0880a249707d0a3fdfdebd62078f8e639839788b`。本阶段只调整 `app/build.gradle.kts` 的 ABI 打包选择：默认 Debug 和 Release 仍为 `arm64-v8a`；仅执行 `-PjevEmulatorAbi=x86_64` 时，Debug 改为 `x86_64`。该选项不修改微信适配/权限/输入法运行时逻辑，也未新增 AVD 镜像或 SDK 下载。
+
+- 测试环境：5070TI-JAY、PowerShell 7.6.6、JDK17、已缓存 Gradle 8.13 / AGP 8.10.1 / Kotlin Gradle Plugin 1.9.24 / Android 36 SDK。模拟器 `emulator-5554`：Android 16/API36、`ro.product.cpu.abilist=x86_64`。
+- **x86_64 Debug 构建 PASS**：`:app:assembleDebug --offline -PjevEmulatorAbi=x86_64`，构建结果 `BUILD SUCCESSFUL`，aapt `native-code: 'x86_64'`；APK 29,073,766 bytes，SHA-256 `71858FA16ACD1A3425AB68601AD45DFC3CB8F54744C549D1ECFA4E8E28B0BA3E`。保留测试包 `D:\\DevCaches\\jev-session-binding-check-20261110\\jev-pr21-emulator-x86_64-0880a.apk`。
+- **安装 PASS**：`adb -s emulator-5554 install -r` 返回 `Success`；`pm path com.jev.probe.guofeng` 返回实际安装的 `base.apk`。
+- **首页渲染有限 PASS**：首次 `am start -W` 约 78 秒后返回 `LaunchState: UNKNOWN`、timeout；Android event log 明确记录 JEV `failed to complete startup` ANR。仅 force-stop **JEV 自身**后再启动，`MainActivity` 进入 Resumed，界面树读取到 52 个本 App 节点、24 个文字节点（“小书童·知言”等），此处只说明**重新启动后界面实际渲染**，不将首次冷启动评价为 PASS。模拟器同时间另有其他应用和系统服务 ANR；根因归属未确认，非源码回归的证据亦不足。
+- **IME 系统注册与选择 PASS**：系统 `ime list -a` 列出 `com.jev.probe.guofeng/com.jev.probe.ime.ZhiyanInputMethodService`；通过 emulator shell `ime enable` 和 `ime set` 成功切换为 JEV，随后恢复原来的 `com.android.inputmethod.latin/.LatinIME` 并禁用临时启用的 JEV 输入法。没有改变其他已安装应用的状态。
+- **设置页交互未验收**：`SettingsActivity` 的 Manifest `android:exported=false`，ADB shell 直接启动时被操作系统按预期拒绝，不能误称 Activity 故障；尝试在首页通过滑动寻找设置入口时，后续 `uiautomator dump` 返回 `null root node`。未证明设置界面输入与保存 E2E。
+- **输入内容及聊天会话端到端未验收**：模拟器没有执行微信 A/B 的真实会话读取、没有合成数据触发 IME 文字插入的现场 UI 回执、没有执行真实模型调用。此前 Python 8/8、Kotlin/JUnit35/35 与 Android JVM65/65 成功证据继续有效，不代替本层真机/模拟器完整 UI 测试。
+- **默认手机 ABI 回归 PASS**：随后不带 `jevEmulatorAbi` 重新 `:app:assembleDebug --offline`，`BUILD SUCCESSFUL`，aapt `native-code: 'arm64-v8a'`，SHA-256 恰为修改前同代码版本 `7B128E47A39BC3ED3E1E729A899811D3D75E8C59B005C13245668321CDE46534`。故设备调试专用构建未改变默认 arm64 APK 字节。
+
+### 验收判定
+
+`EMULATOR_BUILD=PASS`，`EMULATOR_INSTALL=PASS`，`EMULATOR_WARM_UI=PASS_WITH_LIMITS`，`IME_REGISTRATION_SELECTION=PASS`，`EMULATOR_COLD_START=ANR_OBSERVED`，`SETTINGS_AND_CANDIDATE_INSERT_E2E=NOT_VERIFIED`，`WECHAT_A_B_DEVICE_E2E=NOT_RUN`，`RELEASE=NOT_RUN`。保持 PR #21 Draft，未合并、未改变实际微信账号或设备权限。
