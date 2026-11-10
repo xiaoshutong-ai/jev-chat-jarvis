@@ -51,7 +51,7 @@ class SyntheticChatActivity : Activity() {
             orientation = LinearLayout.VERTICAL
             setPadding(16, 16, 16, 20)
         }
-        val scroll = ScrollView(this).apply { fillViewport = true }
+        val scroll = ScrollView(this).apply { isFillViewport = true }
         scroll.addView(column)
         setContentView(scroll)
         column.addView(TextView(this).apply {
