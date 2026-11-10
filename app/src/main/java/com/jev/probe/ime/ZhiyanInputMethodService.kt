@@ -209,8 +209,20 @@ class ZhiyanInputMethodService : InputMethodService() {
         sorted.forEach { bundle ->
             val source = observedBySession[bundle.sessionId]
             if (source != null) {
-                val label = if (bundle.sessionId == suggestedId) "通知建议 · " else "电脑会话 · "
-                box.addView(infoText(label + bundle.displayName + "（点击候选即确认此对象）"))
+                val isManualSelection = bundle.sessionId.startsWith(
+                    SessionBindingResolver.USER_SELECTED_SESSION_PREFIX
+                )
+                val label = when {
+                    isManualSelection -> "用户主动选取 · "
+                    bundle.sessionId == suggestedId -> "通知建议 · "
+                    else -> "电脑会话 · "
+                }
+                val warning = if (isManualSelection) {
+                    "（联系人身份未验证；请核对当前聊天，点击后仅填入）"
+                } else {
+                    "（点击候选即确认此对象）"
+                }
+                box.addView(infoText(label + bundle.displayName + warning))
                 bundle.replies.forEachIndexed { index, reply ->
                     box.addView(replyButton((index + 1).toString() + ". " + reply, index == 0) {
                         val current = focusedWechatEditor
