@@ -209,6 +209,18 @@ class ZhiyanInputMethodService : InputMethodService() {
                             toastLocal("输入窗口已切换，请重新选择会话")
                             return@replyButton
                         }
+                        // The keyboard can remain visible while the user changes
+                        // desktop account or the server replaces/withdraws replies.
+                        // Re-check the *current* pairing and the exact candidate
+                        // before treating this tap as an explicit confirmation.
+                        if (DesktopPairingState.accountFor(focus.profileScope) != pairedAccount ||
+                            !DesktopReplyInbox.isActiveCandidate(
+                                focus.profileScope, pairedAccount, bundle.sessionId,
+                                bundle.publishedAtMs, reply, now
+                            )) {
+                            toastLocal("该联系人候选已变化，请刷新键盘")
+                            return@replyButton
+                        }
                         // The visible candidate tap is explicit user confirmation.
                         val confirmed = SessionBindingResolver.confirm(
                             current, SessionBindingResolver.Suggestion.One(source),
