@@ -61,6 +61,29 @@ class RelayStoreTest(unittest.TestCase):
         with self.assertRaises(ValueError):
             store.poll(-1, store.generation)
 
+    def test_weflow_page_budget_preserves_unprocessed_items(self):
+        chats = ["chat-" + str(i) for i in range(4)]
+        reader = WeFlowReader("http://127.0.0.1:5031", "local-test-token",
+                              "fixture-account", chats)
+        now = int(time.time())
+        def fake_get(path):
+            chat = path.split("talker=", 1)[1].split("&", 1)[0]
+            return {
+                "messages": [{
+                    "serverId": chat + "-" + str(i),
+                    "localType": 1,
+                    "content": "synthetic text " + str(i),
+                    "createTime": now,
+                    "isSend": 0
+                } for i in range(40)]
+            }
+        reader._get = fake_get
+        first = reader.poll_once()
+        second = reader.poll_once()
+        self.assertEqual(100, len(first))
+        self.assertEqual(60, len(second))
+        self.assertEqual(160, len({r["message_id"] for r in first + second}))
+
     def test_weflow_input_requires_loopback_and_allowlist(self):
         for base in ("https://example.com", "http://192.168.1.2:5031", "http://user:pass@127.0.0.1:5031"):
             with self.assertRaises(ValueError):
