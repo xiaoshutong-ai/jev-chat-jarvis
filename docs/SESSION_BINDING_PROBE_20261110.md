@@ -41,3 +41,15 @@
 - 电脑端微信需要在线，且非官方本地数据库方案带有版本、安全和许可证风险，不作为默认发布依赖。
 
 BLUE_STATUS: BLUE_FINDINGS（关键风险是错会话填入、采集来源信任边界与未实测的 OS 提示语义；此处只完成候选判定的可逆源代码原型）。
+
+## 2026-11-10 5070TI-JAY 本机验证记录（RDC 498006168@qq.com）
+
+- 设备 `5070TI-JAY` 在线；PowerShell 7.6.6；JDK 17.0.20；Android 36 SDK + Build Tools 35 已缓存，ADB 37.0.1。
+- 已在 `D:\\GitHubWork\\jev-session-binding-pr21-20261110` 创建独立 detached worktree，检出 `80057877525e5c3a1a9735796ce9dbb1455e9ded`，原 `D:\\GitHubWork\\jev-chat-jarvis-boundary` 的 `ops/canonical-public-runtime-fragments` 工作树未改动。
+- 使用本机缓存 Kotlin compiler embeddable **2.1.20** / JDK 17 / Android 36 `android.jar`，对 PR #21 的 `SessionBindingResolver.kt`、`NotificationClickTracker.kt`、`WeChatNotificationListenerService.kt` 和两份 JUnit 测试做离线定向编译；仅 `Prefs` / `KeepAliveService` 用临时桩代码（存于仓库外 `D:\\DevCaches\\jev-session-binding-check-20261110`）。结果 **COMPILE_EXIT=0**。
+- 使用 JUnit **4.13.2** + Hamcrest 1.3 实际运行两份测试：**OK (12 tests)，JUNIT_EXIT=0**。
+- 尝试本机 Gradle 8.13 + `--offline :app:compileDebugKotlin :app:testDebugUnitTest`，**配置阶段失败**：Windows 默认 Gradle 缓存没有工程固定的 AGP 8.10.1 和 Kotlin Gradle Plugin 1.9.24。此失败不能计为源码测试失败，亦不能计为正式 BUILD_PASS。
+- GitHub 专用 self-hosted runner `JAY-WSL2-JEV-CHAT-JARVIS`：Online、not busy；本轮没有触发 GitHub-hosted workflow。当前 workflow 的 `runs-on` 为 `ubuntu-latest`，不应未经批准直接运行它。
+- vivo `V2366HA` 经 ADB 识别为 Android 16/API 36；默认输入法仍为搜狗，未变更手机权限、未安装/启动新 APK、未触发任何真实微信交互。
+- 验收层级：`SOURCE_COMPILE_PASS (with stubs / Kotlin 2.1.20)`、`TARGETED_JUNIT_PASS 12/12`；`PINNED_ANDROID_BUILD=NOT_RUN`、`DEVICE_APP_INTEGRATION=NOT_RUN`、`RELEASE=NOT_RUN`。
+
