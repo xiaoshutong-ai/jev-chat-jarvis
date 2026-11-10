@@ -63,3 +63,23 @@
 - 不下载过期 DLL 的修改补丁，不关闭/重启微信，不读取进程内存/密钥，不加载未知原生组件。用户原授权仅限独立测试号、文件传输助手、本机只读；下一步若需以调试器附加测试微信获取 SQLCipher 密钥，须明确告诉用户这种新增账号风险，确认后还须验证仅针对 `cc-g52-pilot` 目标 PID，绝不面向 Administrator 主号。
 
 **本轮验收层级**：`WEFLOW_PILOT_LAUNCH=PASS`、`WINDOWS_ACCOUNT_ISOLATION=PASS`、`FIRST_RUN_CONFIGURATION_AUDIT=PASS`、`DIRECT_WINDOWS_UIA_MESSAGE_READ=UNSUPPORTED_IN_TEST`、`RELAY_DEFAULT_PORT_CONFLICT=CONFIRMED`、`TRUSTED_WCDB_PLUGIN=ABSENT`、`REAL_FILE_TRANSFER_MESSAGE_READ=NOT_RUN`、`AI_MODEL_CALL=0`、`AUTO_SEND=0`。保持 PR #21 Draft，应用与微信均未发生数据库操作。
+
+## 2026-11-10 授权后的数据库取钥预检与平台安全拦截
+
+用户明确批准**一次**针对 `5070TI-JAY\\cc-g52-pilot` 测试微信进程的 Windows 调试器取钥尝试，并明确限制：不能访问 Administrator 主微信，先验证进程精确版本，版本不兼容则停止，不绕过检测、不修改客户端。
+
+### 实际完成的低风险只读验证
+
+- 5070TI 上的唯一已加载 `Weixin.dll` 的测试微信主进程为 **PID 82396**（核验时）；其 Windows 用户为 `cc-g52-pilot`，`Weixin.dll` 路径 `D:\\0_Softwares\\Weixin\\4.2.0.13\\Weixin.dll`，精确版本 **4.2.0.13**，字节数 **205943848**，SHA256 `AFE3D02C58BADA3C35009C0CD58EE1F57B2A00FE53237D0DCE649107FDDB9A20`。其他测试微信辅助进程未加载此 DLL，Administrator 的微信进程与其独立。
+- 对该 DLL 的磁盘 PE `.text` 代码段采用第三方 `334456777/WeFlow` Rust v6.0.0 版本分支 `OLD` 特征进行**离线纯文件匹配**：`AMD64`、`.text` 段数 1、特征匹配数 **1**、`STATIC_PREFLIGHT_EXIT=0`，此检查未附加调试器、未读取进程内存、未访问消息密钥。**唯一静态匹配不是实际动态兼容性或成功取钥证据**。
+- `334456777/WeFlow` 的正式 GitHub release `v6.0.0` Windows x64 ZIP，9797314 bytes，SHA256 `B1B0218FB0C1403E7144FB89D99AF77372EE888B2BD2304643B30A76E1455047`，与 GitHub 发布记录 digest 相符；ZIP 条目检查及解压成功。解压 CLI `weflow.exe`，25724416 bytes，SHA256 `54A47776A444FB53FD54C0F4234D7A83A7B99002A685831CEEBB12A119CE2CB9`，Windows Authenticode **NotSigned**。
+- 已将此 CLI 仅作为预检依赖复制到测试用户目录 `C:\\Users\\cc-g52-pilot\\AppData\\Local\\JEV-WeFlow-Pilot\\cli-v6-test\\weflow.exe`，复制后 SHA 匹配；只执行 `--version` 与 `key db --help`，确认 `weflow 6.0.0`、显式 `--pid` 及 `--timeout` 选项，**没有执行 key db**。
+- Rust v6.0.0 公共源码核对：`crates/weflow-native/src/windows_db_key/locator.rs` 对 4.2 使用 `OLD` 特征、`back=3`；`wxkey.rs` 的 Windows 路径从 `windows_db_key::Hook::start(pid)` 启动，`platform.rs` 会调用 `DebugActiveProcess(pid)`，可对微信调试寄存器/线程造成影响。没有验证实际上如何表现，不能保证免风控。
+- 为确保**仅以测试标准用户运行**、只选择唯一测试微信 PID、不将原始数据库密钥打印到远程会话或写入配置，尝试创建一次性 PowerShell 包装脚本 `one-shot-keyprobe.ps1`；**平台 OpenAI 安全检查明确阻止该写入**。严格按照平台安全边界，没有换工具、接口、账号或让用户手工运行同样的取钥命令。现场再次核验：`one-shot-keyprobe.ps1` 不存在、`key-probe-result.txt` 不存在，未执行动态调试附加、未产生密钥。
+- 核查时 `cc-g52-pilot` 与 Administrator 均有 5 个微信进程；WeFlow HTTP `5031` 仍关闭，JEV PR #21 与原 boundary 工作树均干净。用户此前批准的文件传输助手试点数据**仍未读取**。第三方 CLI 被分发为未签名工具，其 Fork 的 Unlicense 标称许可也不能视为消除了原上游 CC BY-NC-SA 4.0 商业兼容性问题。
+
+### 验收判定与可用替代
+
+`TEST_PID_OWNER=PASS`、`EXACT_DLL_VERSION_AND_HASH=PASS`、`STATIC_SIGNATURE_UNIQUE=PASS`、`PINNED_RELEASE_DIGEST=PASS`、`KEY_CAPTURE_RUN=BLOCKED_BY_PLATFORM_SAFETY`、`DEBUGGER_ATTACH=NOT_RUN`、`DECRYPT_KEY=NOT_ACQUIRED`、`TEST_FILE_TRANSFER_READ=NOT_RUN`、`WECHAT_ADMIN_ACCOUNT_UNTOUCHED=PASS`。
+
+可继续的现有合法实现是 JEV Android 通知/输入法的显式会话确认链路，或用户**主动选择、复制/导出**自己的测试文字输入 JEV 合成/本地导入接口。不能把手动选取等价于无需用户操作的微信消息实时读取；不得通过新接口重新尝试同一被拦截的调试取钥。
