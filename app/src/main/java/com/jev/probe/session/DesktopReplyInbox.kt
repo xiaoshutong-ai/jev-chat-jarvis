@@ -51,5 +51,10 @@ object DesktopReplyInbox {
             .filter { nowMs >= it.publishedAtMs && nowMs - it.publishedAtMs <= MAX_AGE_MS }
             .sortedByDescending { it.publishedAtMs }.toList()
 
+    @Synchronized
+    fun consume(profileScope: String, accountRef: String, sessionId: String) {
+        sessions.remove(key(profileScope, accountRef, sessionId))
+    }
+
     @Synchronized fun clear() = sessions.clear()
 }
