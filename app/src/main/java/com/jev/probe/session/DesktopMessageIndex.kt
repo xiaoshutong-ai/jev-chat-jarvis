@@ -43,6 +43,28 @@ object DesktopMessageIndex {
      * come from an already paired local Android user, never an untrusted JSON
      * field. Reject a batch with any cross-account item (no partial import).
      */
+    /**
+     * Preflight the entire batch before acknowledging the desktop cursor.
+     * Empty batches are valid (the remote cursor can still advance), but
+     * malformed nonempty batches must never be mistaken for duplicate IDs.
+     */
+    fun acceptsTrustedBatch(
+        profileScope: String,
+        pairedAccountRef: String,
+        batch: List<Incoming>,
+        nowMs: Long = System.currentTimeMillis()
+    ): Boolean = profileScope.startsWith("com.tencent.mm@") &&
+        pairedAccountRef.isNotBlank() && nowMs > 0L &&
+        batch.size <= MAX_BATCH &&
+        batch.none {
+            it.accountRef != pairedAccountRef ||
+                it.sessionId.isBlank() || it.messageId.isBlank() ||
+                it.sessionId.length > 200 || it.messageId.length > 200 ||
+                it.text.isBlank() || it.text.length > MAX_MESSAGE_CHARS ||
+                it.displayName.length > MAX_LABEL_CHARS || it.timeMs <= 0L ||
+                it.timeMs > nowMs + FUTURE_TOLERANCE_MS
+        }
+
     @Synchronized
     fun mergeTrusted(
         profileScope: String,
@@ -50,15 +72,7 @@ object DesktopMessageIndex {
         batch: List<Incoming>,
         nowMs: Long = System.currentTimeMillis()
     ): Int {
-        if (profileScope.isBlank() || pairedAccountRef.isBlank() || nowMs <= 0L ||
-            batch.isEmpty() || batch.size > MAX_BATCH) return 0
-        if (batch.any {
-            it.accountRef != pairedAccountRef || it.sessionId.isBlank() || it.messageId.isBlank() ||
-                it.sessionId.length > 200 || it.messageId.length > 200 ||
-                it.text.isBlank() || it.text.length > MAX_MESSAGE_CHARS ||
-                it.displayName.length > MAX_LABEL_CHARS || it.timeMs <= 0L ||
-                it.timeMs > nowMs + FUTURE_TOLERANCE_MS
-        }) return 0
+        if (batch.isEmpty() || !acceptsTrustedBatch(profileScope, pairedAccountRef, batch, nowMs)) return 0
 
         var inserted = 0
         for (message in batch) {
