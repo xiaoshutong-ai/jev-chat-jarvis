@@ -1,28 +1,33 @@
 # Privacy Policy Draft — Jev Chat Assistant Fork
 
-Last updated: 2026-09-22
+Last reviewed against JEV mobile source: 2026-11-11
 
 > Working product draft. Replace publisher identity, contact email and public URL
 > before release. Review against the final Play build and provider contracts.
 
 ## Overview
 
-Jev Chat Assistant is a conversation-assistance app. It can read chat content
-that is currently visible on the device, analyze the conversation using model
-services configured by the user, and provide candidate replies. It does not
-automatically send messages.
+JEV is a mobile-first conversation assistant. For WeChat, it obtains input
+from user-requested clipboard reads, optional visible notifications, or a
+screenshot OCR request initiated by the user; it does not subscribe to WeChat
+Accessibility events or read WeChat internal database/UI nodes. Optional
+Accessibility-based reading is limited to explicitly supported QQ/X/Feishu chat
+windows. Configured model services can produce three candidate replies.
+Sending messages always remains a separate user action.
 
 ## Information the app accesses
 
 Depending on the features you enable, the app may access:
 
-- text and UI structure visible in the active supported chat window;
-- the visible conversation title;
-- a screenshot of the active chat window when OCR fallback is needed;
+- standard Android notification message previews when optional notification access is enabled;
+- message text the user explicitly supplies by clipboard or manual conversation import;
+- text and UI structure of the currently visible QQ/X/Feishu supported chat window when Accessibility permission is enabled;
+- optional screenshots initiated by the user for local or selected remote OCR;
 - relationship descriptions, notes and contacts you enter into the local
   knowledge base;
 - chat history if you explicitly enable conversation history;
-- API credentials that you enter for model providers;
+- API credentials and an optional up-to-500-character reply style preference you enter;
+- a user-confirmed temporary 20-message context held in memory for up to 60 minutes;
 - capture diagnostics such as app package name, adapter name, message count,
   capture source, timestamp and status.
 
@@ -31,8 +36,9 @@ message text, OCR text, API keys, prompts or model responses.
 
 ## AccessibilityService
 
-The app uses Android AccessibilityService to identify the active supported chat
-window and read content that is visible to you.
+The app uses Android AccessibilityService for supported QQ/X/Feishu chat windows
+and optional accessibility screenshot functions. It does not subscribe to WeChat
+Accessibility events, read WeChat node trees or automate WeChat controls.
 
 Before you are taken to Android's Accessibility settings, the app displays a
 separate disclosure explaining what is accessed, why it is needed and how data
@@ -51,10 +57,12 @@ configure the provider.
 
 When you request or enable a feature that needs a remote model:
 
-- conversation text and relevant configured context may be sent to the selected
-  judgment provider;
-- conversation text and relevant configured context may be sent to the selected
-  reply provider;
+- conversation text, selected stored context, and a manually imported temporary
+  conversation window may be sent to the selected judgment provider;
+- conversation text, relevant context, and optional user-entered style instructions
+  may be sent to the selected reply provider;
+- optional user-entered style instructions may also be sent to the judgment/ranking
+  provider when comparing generated replies;
 - if you explicitly select remote Vision OCR, a cropped image of the visible
   chat-content region may be sent to the selected vision provider;
 - if you explicitly enable rolling contact summaries, stored chat history may be
@@ -73,10 +81,14 @@ You should review the policy and settings of the provider you choose.
 ## Local OCR
 
 The default OCR engine is bundled ML Kit Chinese text recognition. In local OCR
-mode, screenshots are processed on the device and are not sent to a vision
-model provider by the OCR feature.
+mode, screenshot pixels and recognition output are processed on the device and
+are not sent to a vision model provider by that feature. According to Google's
+ML Kit terms, the SDK may separately contact Google servers for updates,
+compatibility and usage/performance metrics; this is distinct from uploading
+the user's input image or OCR results. See https://developers.google.com/ml-kit/terms .
+Users must be informed of Google's SDK metric processing where applicable.
 
-Remote Vision OCR is a separate, explicit setting.
+Remote Vision OCR is a separate, explicitly selected model-service function.
 
 ## Local history and knowledge base
 
@@ -88,6 +100,11 @@ to the app's private local storage and used as context for later analysis.
 Rolling contact summaries are also OFF by default. If enabled, the app updates a
 derived summary only after enough new recorded history accumulates.
 
+Separately, the user may temporarily import the most recent 20 messages
+with explicit "me"/"other" labels. This context expires after 60 minutes in
+memory. The app does not authenticate the WeChat contact identity from a
+clipboard string and does not silently learn a permanent writing profile.
+
 Knowledge-base notes and contact information that you create are stored in the
 app's private local storage.
 
@@ -95,7 +112,9 @@ app's private local storage.
 
 API credentials are stored using AES-GCM encryption backed by AndroidKeyStore.
 The encryption key remains in AndroidKeyStore and encrypted values are stored in
-the app's private preferences.
+the app's private preferences. If encryption or secure preference storage fails,
+new credentials are rejected rather than persisted in plaintext. Existing legacy
+plaintext credentials are migrated only after verified encrypted storage.
 
 The app prevents implicit credential inheritance between different provider
 hosts and requires HTTPS for non-loopback model endpoints.

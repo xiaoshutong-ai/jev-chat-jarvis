@@ -660,6 +660,28 @@ class SettingsActivity : AppCompatActivity() {
             if (prefs.enabled) KeepAliveService.start(this)
         })
 
+        // Low-key attribution; no model calls, new permissions, or UI automation.
+        root.addView(section("关于"))
+        val licenseCard = card()
+        licenseCard.addView(text(
+            "本应用基于 Jev Chat Assistant 开源项目二次开发。原项目为 MIT 许可。",
+            12f, sub
+        ))
+        licenseCard.addView(cardBtn("查看开源许可") {
+            val notice = runCatching {
+                assets.open("NOTICE").bufferedReader(Charsets.UTF_8).use { it.readText() }
+            }.getOrElse { "NOTICE 文件暂不可读取，请查看应用发布页面。" }
+            val license = runCatching {
+                assets.open("LICENSE").bufferedReader(Charsets.UTF_8).use { it.readText() }
+            }.getOrElse { "LICENSE 文件暂不可读取，请查看应用发布页面。" }
+            androidx.appcompat.app.AlertDialog.Builder(this)
+                .setTitle("开源许可与来源")
+                .setMessage(notice + "\n\n" + license)
+                .setPositiveButton("关闭", null)
+                .show()
+        })
+        root.addView(licenseCard)
+
         setContentView(scroll)
     }
 

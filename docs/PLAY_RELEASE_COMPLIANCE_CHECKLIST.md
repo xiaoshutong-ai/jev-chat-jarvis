@@ -1,10 +1,20 @@
 # Google Play Release Compliance Checklist — Jev Chat Fork
 
-Status: pre-release working checklist, not legal advice.
+**HISTORICAL / 2026-09-22 — not the current release baseline.**
+Use [RELEASE_READINESS_20261111.md](RELEASE_READINESS_20261111.md) for the
+current Android/WeChat access model, provider-data disclosures, license
+provenance, device/CI status and remaining release conditions.
 
-This checklist reflects the current fork behavior on 2026-09-22. Re-run the
-review if AccessibilityService, model routing, OCR, history, storage, analytics,
-ads, or third-party SDK behavior changes.
+The sections below preserve the historical 2026-09-22 Play-policy research for
+audit purposes. In particular, historical suggestions about
+`isAccessibilityTool=true` and reading WeChat via Accessibility have been
+superseded: current code uses `isAccessibilityTool=false`, explicitly excludes
+WeChat from its Accessibility subscription, and relies on user-controlled
+clipboard, notification previews and optional local OCR. Do not interpret any
+old “DEVICE A/B COMPLETED” label below as current Play-release acceptance.
+
+This is a research checklist, not legal advice. Re-evaluate Play Console
+requirements against the actual final signed distribution if Play is selected.
 
 ## 1. AccessibilityService classification — DEVICE A/B COMPLETED
 
