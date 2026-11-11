@@ -75,7 +75,8 @@ class WeChatNotificationListenerService : NotificationListenerService() {
 
         if (title.isBlank() && text.isBlank()) return
 
-        val signature = title + "\u0000" + text
+        val userLabel = n.user?.toString().orEmpty().ifBlank { "default" }
+        val signature = WeChatNotificationDedupKey.of(userLabel, title, text)
         val now = System.currentTimeMillis()
         val last = recent[signature]
         if (last != null && now - last < DEDUPE_MS) return
@@ -85,7 +86,6 @@ class WeChatNotificationListenerService : NotificationListenerService() {
             recent.entries.removeIf { it.value < cutoff }
         }
 
-        val userLabel = n.user?.toString().orEmpty().ifBlank { "default" }
         // Track only a volatile, per-profile click correlation signal. No UI action.
         NotificationClickTracker.recordPosted(
             profileScope = "$WECHAT_PKG@$userLabel",
