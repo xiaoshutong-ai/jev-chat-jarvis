@@ -57,3 +57,26 @@
 - GitHub PR #21 保持 Draft，未合并/发布；Note9 `INSTALL=PASS`、`OVERLAY_USER_GRANT=PASS`、`OVERLAY_SYSTEM_WINDOW=PASS`、`WECHAT_FOREGROUND_OVERLAY=PASS`、`CLIPBOARD_REAL_E2E=NOT_RUN`。
 
 以上为对用户已授权的 JEV 安装和标准 Android 悬浮窗功能的必要验收，不扩大数据收集或自动化权限。
+
+## 2026-11-11 Note9 剪贴板黑框缺陷定向修复
+
+用户在 Redmi Note9 点击 JEV 悬浮球后报告“屏幕上边缘闪现一个黑框就立即消失、没有反应”。实时验收回读：
+
+- 目标包仍为 `com.jev.probe.guofeng`，旧已装 SHA-256 `7C72420E1F04E247FD0D7B4C8A983F65B782768BBC4EB3021B1B74BD61DAA112`；窗口管理器已确认悬浮窗 `type=2038`、`isVisible=true`，APP_OP `SYSTEM_ALERT_WINDOW: allow`。
+- 系统日志 2026-11-11 09:51 连续显示 `ClipboardImportActivity` 被 `ActivityTaskManager` 成功启动、约 130-160ms 后展示、继而退出，没有 JEV 崩溃记录。Note9 AppOps `READ_CLIPBOARD: foreground` 有前台访问时间，但这不足以证明成功取得消息正文。
+- 通过 Android Debug 的 `run-as` 在设备本地程序化解析 JEV 专属 `shared_prefs/jev_assistant.xml`，**仅打印配置项是否非空**，不输出/保存任何秘钥值：`judge_key NONEMPTY=False`，`judge_key_enc_v1 NONEMPTY=False`；即设备缺少模型 Key，不可能发生付费分析调用。
+- 源码确认 `OverlayController.showError` 先前只执行 `setContent(...)`，没有像 `showLoading` 一样在折叠时调用 `toggle()`。因此 `KeepAliveService` 处理缺 Key 时虽然调用 `overlay.showError(...)`，却可能只更新隐藏面板，造成黑框闪过后无反馈。**此为已确认的源码 UI 缺陷**，与 Android 前台剪贴板能力不足应区分。
+
+### 修复及工程验收
+
+原 PR #21 单写工作树上仅修改三份源码，提交 `dce504ea6a2a6cc8e6b373d662bd41beba4555e7`：
+
+1. `OverlayController.showError` 自动展开提示面板，剪贴板失败时提供“重新读取复制内容”按钮。
+2. `ClipboardImportActivity` 显式设置透明窗口背景/关闭动画，保持用户主动点击后前台聚焦读取，不监控剪贴板；针对 `NO_FOCUS`、`NO_TEXT`、`OWN_REPLY`、`TOO_LONG`、`UNAVAILABLE` 通过同包**非导出 KeepAliveService**回传固定状态码，原文只走既有单次内部消息链；仅日志记录阶段与异常**类型**，绝不记录消息、联系人、Token。
+3. `KeepAliveService` 映射已知失败状态为人能理解的中文提示；成功读入后的缺模型密钥状态明确记录 `MODEL_KEY_MISSING` 并可见显示；没有暗中启用模型或其他后台权限。
+
+复用 5070TI Gradle 8.13 + SDK36 离线缓存：受影响 `ExplicitClipboardPolicyTest`、`OverlayTapPolicyTest` 定向测试 `BUILD SUCCESSFUL`；`:app:assembleDebug --offline` arm64 构建 `BUILD SUCCESSFUL`、APK 仅 `arm64-v8a`，28,915,726 bytes；APK SHA-256 `9D995DF007CFDD27C3085ADA26F2E1A97E6BEFECECAC471E6F354EB053AB0668`。签名证书 SHA-256 `e92e4d40ce7694bce8d54dec2eb7e23afcd1a871891fe11e50cfec5ce57afa3f`，与此前手机候选包的 Debug 签名相同。
+
+将新 APK 作为**文件传输**到 Note9 下载目录 `/sdcard/Download/JEV_Note9_ClipboardFix_dce504e_9D995DF0.apk`，手机本地 SHA-256 已独立回读一致。**截至本回执，新包尚未通过手机系统安装确认，Note9 仍运行旧包；DEVICE_FIX_E2E=NOT_RUN。** 需本人用 MIUI 文件管理器打开该 APK，在原应用上同签名更新，且保留系统提示的必要同意。前次 `INSTALL_FAILED_USER_RESTRICTED` 不使用 ADB 绕过。
+
+待安装后仅用 `JEV_NOTE9_TEST_01` 合成测试文本核对 AppOps、`clipboard_state=...` 无正文日志、错误面板可见和微信前台悬浮窗；不调用付费模型、不向微信发送、不更改搜狗输入法或 vivo。PR #21 仍 Draft，CI、真实候选及填入验收未宣称通过。
