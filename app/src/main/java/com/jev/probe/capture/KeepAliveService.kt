@@ -82,10 +82,29 @@ class KeepAliveService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
+            ClipboardImportActivity.ACTION_CLIPBOARD_STATUS -> {
+                if (prefs.enabled) {
+                    val code = intent.getStringExtra(ClipboardImportActivity.EXTRA_STATUS).orEmpty()
+                    val message = when (code) {
+                        "NO_FOCUS" -> "系统未能让 JEV 在前台读取剪贴板，请重新复制后再试"
+                        "NO_TEXT" -> "没有找到复制的文字，请先在微信中复制一条测试消息"
+                        "OWN_REPLY" -> "复制的是 JEV 已生成的回复，请在微信中粘贴"
+                        "TOO_LONG" -> "复制文字超过 4000 字，请只选一条消息"
+                        "UNAVAILABLE" -> "剪贴板暂时不可访问，请重新复制后再试"
+                        else -> "剪贴板读取未完成，请重试"
+                    }
+                    val safeCode = if (code in setOf(
+                            "NO_FOCUS", "NO_TEXT", "OWN_REPLY", "TOO_LONG", "UNAVAILABLE"
+                        )) code else "UNKNOWN"
+                    android.util.Log.i("JEVASSIST", "clipboard_state=REJECTED_" + safeCode)
+                    overlay.showError(message, allowClipboardRetry = true)
+                }
+            }
             ClipboardImportActivity.ACTION_CLIPBOARD_READY -> {
                 // Explicit non-exported service call from the app's own
                 // foreground clipboard Activity. Never accept external IPC.
                 if (prefs.enabled) {
+                    android.util.Log.i("JEVASSIST", "clipboard_state=TEXT_HANDOFF")
                     handleClipboardText(
                         intent.getStringExtra(ClipboardImportActivity.EXTRA_TEXT).orEmpty()
                     )
@@ -195,13 +214,17 @@ class KeepAliveService : Service() {
         val now = System.currentTimeMillis()
         val snapshot = ExplicitClipboardPolicy.fromUserCopy(raw, now)
         if (snapshot == null) {
-            overlay.toast("请先复制一条不超过 4000 字的对方消息")
+            android.util.Log.i("JEVASSIST", "clipboard_state=INVALID_TEXT")
+            overlay.showError("复制的文字不可分析，请重新复制一条测试消息",
+                allowClipboardRetry = true)
             return
         }
         if (!prefs.hasKey()) {
-            overlay.showError("请先在 JEV 设置中配置模型 API Key")
+            android.util.Log.i("JEVASSIST", "clipboard_state=MODEL_KEY_MISSING")
+            overlay.showError("已读取复制的消息。要生成候选回复，请先到 JEV 设置中配置模型 API Key。")
             return
         }
+        android.util.Log.i("JEVASSIST", "clipboard_state=MODEL_ANALYSIS_USER_REQUESTED")
 
         val text = snapshot.messages.single().text
         val fingerprint = ExplicitClipboardPolicy.fingerprint(text)

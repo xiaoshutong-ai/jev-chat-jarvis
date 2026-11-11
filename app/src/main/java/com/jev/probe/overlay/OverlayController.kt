@@ -611,11 +611,21 @@ class OverlayController(private val ctx: Context) {
         root?.visibility = if (hidden) View.INVISIBLE else View.VISIBLE
     }
 
-    fun showError(msg: String) {
-        ensureRoot(); bubble?.alpha = 1f
-        setContent(listOf(
-            line("出错了", "#A63731", 14f, true),
-            hint(msg)))
+    fun showError(msg: String, allowClipboardRetry: Boolean = false) {
+        ensureRoot()
+        bubble?.alpha = 1f
+        val views = ArrayList<View>()
+        views.add(line("操作提示", "#A63731", 14f, true))
+        views.add(hint(msg))
+        if (allowClipboardRetry) {
+            onAnalyzeClipboard?.let { action ->
+                views.add(secondaryButton("重新读取复制内容") { action.invoke() })
+            }
+        }
+        setContent(views)
+        // A short foreground clipboard Activity immediately closes on MIUI.
+        // The previous code left the error invisible in a collapsed panel.
+        if (!expanded) toggle()
     }
 
     fun showJudgment(a: Analysis, clipboardFingerprint: String? = null) {

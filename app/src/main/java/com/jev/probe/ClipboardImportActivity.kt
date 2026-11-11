@@ -4,28 +4,31 @@ import android.app.Activity
 import android.content.ClipDescription
 import android.content.ClipboardManager
 import android.content.Intent
+import android.graphics.Color
+import android.graphics.drawable.ColorDrawable
 import android.os.Build
 import android.os.Bundle
-import com.jev.probe.capture.KeepAliveService
 import android.os.Handler
 import android.os.Looper
+import android.util.Log
 import android.view.WindowManager
 import android.widget.Toast
+import com.jev.probe.capture.KeepAliveService
 import com.jev.probe.core.ExplicitClipboardPolicy
 
 /**
- * Foreground-only clipboard handoff initiated by a deliberate JEV bubble tap.
+ * One deliberate clipboard read while JEV owns the foreground Activity.
  *
- * Android 10+ denies background clipboard access. onCreate/onResume run before
- * the Activity necessarily owns focus, so wait for real window focus first.
- * Never monitor clipboard changes, touch WeChat UI, or retain copied text.
+ * The user initiates this from the visible bubble. This Activity does not
+ * watch clipboard changes, touch WeChat's UI, or persist any copied text.
+ * Results are handed to a manifest non-exported JEV foreground service.
  */
 class ClipboardImportActivity : Activity() {
     private var readAttempted = false
     private val mainHandler = Handler(Looper.getMainLooper())
     private val focusTimeout = Runnable {
         if (!readAttempted && !isFinishing) {
-            Toast.makeText(this, "未能在前台读取剪贴板，请再点一次 JEV 悬浮球", Toast.LENGTH_SHORT).show()
+            reportStatus("NO_FOCUS")
             closeQuietly()
         }
     }
@@ -33,8 +36,10 @@ class ClipboardImportActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         window.clearFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND)
-        // Do not access primaryClip here; this transparent Activity may not yet
-        // be the focused foreground app.
+        window.setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
+        window.decorView.setBackgroundColor(Color.TRANSPARENT)
+        window.setWindowAnimations(0)
+        // Android 10+ prevents background clipboard reads. Wait for focus.
         mainHandler.postDelayed(focusTimeout, 3_000L)
     }
 
@@ -43,9 +48,10 @@ class ClipboardImportActivity : Activity() {
         if (!hasFocus || readAttempted) return
         readAttempted = true
         mainHandler.removeCallbacks(focusTimeout)
+        Log.i(TAG, "clipboard_state=FOREGROUND_FOCUSED")
         window.decorView.post {
             if (!hasWindowFocus()) {
-                Toast.makeText(this, "剪贴板前台权限暂不可用，请再试一次", Toast.LENGTH_SHORT).show()
+                reportStatus("NO_FOCUS")
                 closeQuietly()
             } else {
                 readUserSelectedClipboard()
@@ -57,42 +63,58 @@ class ClipboardImportActivity : Activity() {
         try {
             val manager = getSystemService(CLIPBOARD_SERVICE) as ClipboardManager
             val clip = manager.primaryClip
-            val mimeOk = clip?.description?.let {
+            val plainText = clip?.description?.let {
                 it.hasMimeType(ClipDescription.MIMETYPE_TEXT_PLAIN) ||
                     it.hasMimeType(ClipDescription.MIMETYPE_TEXT_HTML)
             } == true
 
-            if (!mimeOk || clip == null || clip.itemCount == 0) {
-                Toast.makeText(this, "请先在微信中复制一条对方消息", Toast.LENGTH_SHORT).show()
+            if (!plainText || clip == null || clip.itemCount == 0) {
+                reportStatus("NO_TEXT")
                 return
             }
-            // JEV candidate cards explicitly label their own copy operation.
-            // Do not accidentally re-analyze an outgoing JEV-generated reply.
+
             if (clip.description.label?.toString() == "jev_reply") {
-                Toast.makeText(this, "这是已复制的 JEV 候选，请直接粘贴到微信", Toast.LENGTH_SHORT).show()
+                reportStatus("OWN_REPLY")
                 return
             }
 
             val text = clip.getItemAt(0).coerceToText(this)?.toString().orEmpty().trim()
-            if (text.isBlank()) {
-                Toast.makeText(this, "剪贴板没有可分析的文字", Toast.LENGTH_SHORT).show()
-            } else if (text.length > ExplicitClipboardPolicy.MAX_TEXT_CHARS) {
-                Toast.makeText(this, "消息超过 4000 字，请只复制一条对方消息", Toast.LENGTH_LONG).show()
-            } else {
-                // KeepAliveService is manifest non-exported. An explicit
-                // same-app service intent prevents other apps from forging
-                // pre-Android-13 dynamically registered clipboard broadcasts.
-                val delivery = Intent(this, KeepAliveService::class.java)
-                    .setAction(ACTION_CLIPBOARD_READY)
-                    .putExtra(EXTRA_TEXT, text)
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                    startForegroundService(delivery)
-                } else {
-                    startService(delivery)
+            when {
+                text.isBlank() -> reportStatus("NO_TEXT")
+                text.length > ExplicitClipboardPolicy.MAX_TEXT_CHARS -> reportStatus("TOO_LONG")
+                else -> {
+                    startInternalService(
+                        Intent(this, KeepAliveService::class.java)
+                            .setAction(ACTION_CLIPBOARD_READY)
+                            .putExtra(EXTRA_TEXT, text)
+                    )
+                    Log.i(TAG, "clipboard_state=HANDOFF_SENT")
                 }
             }
+        } catch (failure: Exception) {
+            // Only an exception class is logged; never any clipboard value.
+            Log.w(TAG, "clipboard_state=READ_FAILED_" + failure.javaClass.simpleName)
+            reportStatus("UNAVAILABLE")
         } finally {
             closeQuietly()
+        }
+    }
+
+    private fun startInternalService(intent: Intent) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            startForegroundService(intent)
+        } else {
+            startService(intent)
+        }
+    }
+
+    private fun reportStatus(code: String) {
+        val intent = Intent(this, KeepAliveService::class.java)
+            .setAction(ACTION_CLIPBOARD_STATUS)
+            .putExtra(EXTRA_STATUS, code)
+        runCatching { startInternalService(intent) }.onFailure {
+            Log.w(TAG, "clipboard_state=STATUS_HANDOFF_FAILED_" + it.javaClass.simpleName)
+            Toast.makeText(this, "暂时无法显示剪贴板状态，请重新打开 JEV", Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -109,7 +131,10 @@ class ClipboardImportActivity : Activity() {
     }
 
     companion object {
+        private const val TAG = "JEVASSIST"
         const val ACTION_CLIPBOARD_READY = "com.jev.probe.action.CLIPBOARD_READY"
+        const val ACTION_CLIPBOARD_STATUS = "com.jev.probe.action.CLIPBOARD_STATUS"
         const val EXTRA_TEXT = "text"
+        const val EXTRA_STATUS = "status"
     }
 }
