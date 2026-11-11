@@ -13,7 +13,7 @@ import android.os.IBinder
 import com.jev.probe.ClipboardImportActivity
 import com.jev.probe.core.ChatSnapshot
 import com.jev.probe.core.ExplicitClipboardPolicy
-import com.jev.probe.core.RecentExplicitCopy
+import com.jev.probe.core.ClipboardAnalysisCache
 import com.jev.probe.core.Msg
 import com.jev.probe.core.Prefs
 import com.jev.probe.core.RankedReply
@@ -67,7 +67,8 @@ class KeepAliveService : Service() {
     private val inbox = LinkedHashMap<String, ArrayDeque<WeChatNotification>>()
     private var latestKey: String? = null
     private var latestAt: Long = 0L
-    private val recentExplicitCopy = RecentExplicitCopy()
+    private val clipboardAnalysisCache = ClipboardAnalysisCache()
+    private var explicitRefreshFingerprint: String? = null
 
     override fun onCreate() {
         super.onCreate()
@@ -211,6 +212,8 @@ class KeepAliveService : Service() {
     }
 
     private fun handleClipboardText(raw: String) {
+        val refreshRequestedFor = explicitRefreshFingerprint
+        explicitRefreshFingerprint = null
         val now = System.currentTimeMillis()
         val snapshot = ExplicitClipboardPolicy.fromUserCopy(raw, now)
         if (snapshot == null) {
@@ -219,33 +222,60 @@ class KeepAliveService : Service() {
                 allowClipboardRetry = true)
             return
         }
-        if (!prefs.hasKey()) {
-            android.util.Log.i("JEVASSIST", "clipboard_state=MODEL_KEY_MISSING")
-            overlay.showError("已读取复制的消息。要生成候选回复，请先到 JEV 设置中配置模型 API Key。")
-            return
-        }
-        android.util.Log.i("JEVASSIST", "clipboard_state=MODEL_ANALYSIS_USER_REQUESTED")
 
         val text = snapshot.messages.single().text
         val fingerprint = ExplicitClipboardPolicy.fingerprint(text)
-        if (recentExplicitCopy.checkAndMark(text, now)) {
-            if (overlay.reopenClipboardResult(fingerprint)) {
-                overlay.toast("已显示刚才的候选，不会重复调用模型")
-            } else {
-                overlay.toast("相同文字正在分析，避免重复调用模型")
+        // Changed provider/model settings must not silently restore old results.
+        // The cache key and all results live only in this service's memory.
+        val cacheKey = listOf(
+            fingerprint, prefs.judgeProvider, prefs.judgeBaseUrl, prefs.judgeModel,
+            prefs.replyBaseUrl, prefs.replyModel
+        ).joinToString("\u0000")
+
+        // Only this explicitly labelled button can invalidate a completed result.
+        overlay.setManualAnalyzeHandler(this) {
+            explicitRefreshFingerprint = fingerprint
+            launchClipboardImport()
+        }
+        if (refreshRequestedFor == fingerprint) {
+            clipboardAnalysisCache.invalidateCompleted(cacheKey)
+        }
+        when (val decision = clipboardAnalysisCache.begin(cacheKey)) {
+            is ClipboardAnalysisCache.Decision.Cached -> {
+                overlay.resetForNewConversation()
+                overlay.setNote(snapshot.note)
+                overlay.setContextInfo(
+                    decision.result.contextNotes, decision.result.contextHistory
+                )
+                overlay.showJudgment(decision.result.judgment, fingerprint)
+                overlay.showReplies(
+                    decision.result.replies, error = decision.result.replyError
+                )
+                android.util.Log.i("JEVASSIST", "clipboard_state=CACHED_RESULT")
+                overlay.toast("已恢复之前的候选，不会重复调用模型")
+                return
             }
+            ClipboardAnalysisCache.Decision.Pending -> {
+                android.util.Log.i("JEVASSIST", "clipboard_state=ALREADY_ANALYZING")
+                overlay.toast("这条消息仍在分析，不会重复调用模型")
+                return
+            }
+            ClipboardAnalysisCache.Decision.New -> Unit
+        }
+
+        if (!prefs.hasKey()) {
+            clipboardAnalysisCache.fail(cacheKey)
+            android.util.Log.i("JEVASSIST", "clipboard_state=MODEL_KEY_MISSING")
+            overlay.showError("已读取复制的消息。要生成候选回复，请先到 JEV 设置中配置模型 API Key。")
             return
         }
 
         // A notification may be from WeChat A while clipboard is from clone B:
         // NEVER borrow its contact title, userLabel, or relationship.
-        overlay.setManualAnalyzeHandler(this) {
-            recentExplicitCopy.clear()
-            launchClipboardImport()
-        }
+        android.util.Log.i("JEVASSIST", "clipboard_state=MODEL_ANALYSIS_USER_REQUESTED")
         analyzeSnapshot(
             snapshot, WECHAT_PKG, HistoryCaptureHint.CONSERVATIVE,
-            clipboardFingerprint = fingerprint
+            clipboardFingerprint = fingerprint, clipboardCacheKey = cacheKey
         )
     }
 
@@ -254,9 +284,11 @@ class KeepAliveService : Service() {
         app: String,
         historyHint: HistoryCaptureHint,
         allowAutoCopy: Boolean = false,
-        clipboardFingerprint: String? = null
+        clipboardFingerprint: String? = null,
+        clipboardCacheKey: String? = null
     ) {
         if (!prefs.hasKey()) {
+            clipboardCacheKey?.let { clipboardAnalysisCache.fail(it) }
             overlay.showError("未设置判断接口密钥，去设置里填")
             return
         }
@@ -266,57 +298,83 @@ class KeepAliveService : Service() {
         overlay.setNote(snapshot.note)
 
         worker.execute {
-            val ctx = runCatching {
-                ContextBuilder.build(this, snapshot, app, prefs, historyHint)
-            }.getOrNull()
-            if (epoch.get() != myEpoch) return@execute
-
-            val rel = effectiveRelationship(snapshot, ctx)
-            val client = JevClient(prefs)
-            val judgment = client.judge(snapshot, rel, ctx)
-            if (epoch.get() != myEpoch) return@execute
-
-            mainPost {
-                if (epoch.get() != myEpoch) return@mainPost
-                overlay.setContextInfo(ctx?.notes?.size ?: 0, ctx?.history?.size ?: 0)
-                if (judgment.error != null) overlay.showError(judgment.error)
-                else overlay.showJudgment(judgment, clipboardFingerprint)
+            fun stale(): Boolean {
+                if (epoch.get() == myEpoch) return false
+                clipboardCacheKey?.let { clipboardAnalysisCache.fail(it) }
+                return true
             }
-            if (judgment.error != null) return@execute
 
-            val candidates = runCatching {
-                client.draftCandidates(snapshot, rel, ctx)
-            }.getOrElse { emptyList() }
-            if (epoch.get() != myEpoch) return@execute
+            try {
+                val ctx = runCatching {
+                    ContextBuilder.build(this, snapshot, app, prefs, historyHint)
+                }.getOrNull()
+                if (stale()) return@execute
 
-            if (candidates.isNotEmpty()) {
-                val provisional = candidates.map { RankedReply(it, 0.0) }
+                val rel = effectiveRelationship(snapshot, ctx)
+                val client = JevClient(prefs)
+                val judgment = client.judge(snapshot, rel, ctx)
+                if (stale()) return@execute
+
                 mainPost {
-                    if (epoch.get() == myEpoch) {
-                        overlay.showReplies(provisional, sorting = true)
-                    }
+                    if (epoch.get() != myEpoch) return@mainPost
+                    overlay.setContextInfo(ctx?.notes?.size ?: 0, ctx?.history?.size ?: 0)
+                    if (judgment.error != null) overlay.showError(judgment.error)
+                    else overlay.showJudgment(judgment, clipboardFingerprint)
+                }
+                if (judgment.error != null) {
+                    clipboardCacheKey?.let { clipboardAnalysisCache.fail(it) }
+                    return@execute
                 }
 
-                val ranked = runCatching {
-                    client.rankCandidates(snapshot, rel, candidates, ctx)
+                val candidates = runCatching {
+                    client.draftCandidates(snapshot, rel, ctx)
                 }.getOrElse { emptyList() }
-                if (epoch.get() != myEpoch) return@execute
+                if (stale()) return@execute
 
-                val finalReplies = if (ranked.isNotEmpty()) ranked else provisional
+                var finalReplies = emptyList<RankedReply>()
+                var replyError: String? = "模型没有生成候选回复"
+                if (candidates.isNotEmpty()) {
+                    val provisional = candidates.map { RankedReply(it, 0.0) }
+                    mainPost {
+                        if (epoch.get() == myEpoch) {
+                            overlay.showReplies(provisional, sorting = true)
+                        }
+                    }
+                    val ranked = runCatching {
+                        client.rankCandidates(snapshot, rel, candidates, ctx)
+                    }.getOrElse { emptyList() }
+                    if (stale()) return@execute
+                    finalReplies = if (ranked.isNotEmpty()) ranked else provisional
+                    replyError = if (ranked.isEmpty()) "排序暂不可用" else null
+                }
+
+                clipboardCacheKey?.let {
+                    clipboardAnalysisCache.complete(
+                        it, ClipboardAnalysisCache.Result(
+                            judgment = judgment,
+                            replies = finalReplies,
+                            replyError = replyError,
+                            contextNotes = ctx?.notes?.size ?: 0,
+                            contextHistory = ctx?.history?.size ?: 0
+                        )
+                    )
+                }
                 mainPost {
                     if (epoch.get() == myEpoch) {
-                        overlay.showReplies(
-                            finalReplies,
-                            error = if (ranked.isEmpty()) "排序暂不可用" else null,
-                            sorting = false
-                        )
-                        if (
-                            allowAutoCopy &&
-                            prefs.wechatAutoCopyTopReply &&
-                            ranked.isNotEmpty()
+                        overlay.showReplies(finalReplies, error = replyError, sorting = false)
+                        if (allowAutoCopy && prefs.wechatAutoCopyTopReply &&
+                            finalReplies.isNotEmpty() && replyError == null
                         ) {
-                            ranked.firstOrNull()?.text?.let { copyTopReply(it) }
+                            finalReplies.firstOrNull()?.text?.let { copyTopReply(it) }
                         }
+                    }
+                }
+            } catch (failure: Exception) {
+                clipboardCacheKey?.let { clipboardAnalysisCache.fail(it) }
+                mainPost {
+                    if (epoch.get() == myEpoch) {
+                        overlay.showError("模型分析未完成，请重试（" +
+                            failure.javaClass.simpleName + "）")
                     }
                 }
             }

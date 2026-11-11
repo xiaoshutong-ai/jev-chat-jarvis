@@ -790,19 +790,37 @@ class OverlayController(private val ctx: Context) {
         })
         val btns = LinearLayout(ctx).apply { orientation = LinearLayout.HORIZONTAL }
         btns.addView(pill("复制并收起", true) { copy(text); if (expanded) toggle() })
-        btns.addView(pill("快捷填入", false) { armIme(text) })
+        btns.addView(pill("切换键盘填入", false) { armIme(text) })
         c.addView(btns)
         return c
     }
 
     private fun armIme(text: String) {
+        // A system IME cannot write through another app's currently selected
+        // keyboard. Preserve the explicit candidate across MIUI picker restarts.
         ReplyHandoff.arm(text)
         val imm = ctx.getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
-        runCatching { imm.showInputMethodPicker() }
-            .onFailure {
-                toast("无法打开输入法选择器，请先在系统设置启用“小书童·快捷填入”")
-            }
+        val enabled = imm.enabledInputMethodList.any { it.packageName == ctx.packageName }
+        // Always offer a working, user-selected fallback; never paste or send.
+        val copied = runCatching {
+            val cm = ctx.getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+            cm.setPrimaryClip(android.content.ClipData.newPlainText("jev_reply", text))
+        }.isSuccess
         if (expanded) toggle()
+        if (!enabled) {
+            toast(if (copied) "已复制。先在系统设置启用小书童输入法，或在微信长按粘贴"
+                  else "请在系统设置启用小书童输入法")
+            return
+        }
+        runCatching { imm.showInputMethodPicker() }
+            .onSuccess {
+                toast(if (copied) "候选已复制。选“小书童·快捷填入”，再点候选；也可直接粘贴"
+                      else "选“小书童·快捷填入”后，再点候选写入当前聊天")
+            }
+            .onFailure {
+                toast(if (copied) "选择器未打开，候选已复制，请在微信输入框粘贴"
+                      else "输入法选择器未打开，请在微信里手动切换小书童输入法")
+            }
     }
 
     private fun pill(label: String, primary: Boolean, onClick: () -> Unit) = TextView(ctx).apply {
@@ -818,7 +836,7 @@ class OverlayController(private val ctx: Context) {
     }
 
     private fun reAnalyzeBtn() = TextView(ctx).apply {
-        text = "重新分析"; textSize = 13f; gravity = Gravity.CENTER
+        text = "重新分析（会产生费用）"; textSize = 13f; gravity = Gravity.CENTER
         setTextColor(Guofeng.INK_SOFT)
         setPadding(dp(10), dp(10), dp(10), dp(4))
         setOnClickListener { onManualAnalyze?.invoke() }

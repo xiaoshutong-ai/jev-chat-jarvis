@@ -133,7 +133,13 @@ class ZhiyanInputMethodService : InputMethodService() {
     override fun onStartInputView(info: EditorInfo?, restarting: Boolean) {
         super.onStartInputView(info, restarting)
         refreshEditorIdentity(info)
-        val armed = ReplyHandoff.consumeArmed()
+        val armed = if (focusedWechatEditor == null) {
+            ReplyHandoff.consumeArmed()
+        } else {
+            // MIUI can recreate the keyboard repeatedly during a system picker
+            // transition. Only a successful, explicit candidate tap consumes it.
+            ReplyHandoff.peekArmed()
+        }
         if (focusedWechatEditor == null && !armed.isNullOrBlank()) {
             // Existing one-shot behavior is unchanged outside WeChat.
             commitCandidate(armed)
@@ -184,7 +190,13 @@ class ZhiyanInputMethodService : InputMethodService() {
         if (!manual.isNullOrBlank()) {
             box.addView(infoText("手动选择的候选 · 未验证联系人"))
             box.addView(replyButton(manual, true) {
-                if (focusedWechatEditor == focus) commitCandidate(manual)
+                if (focusedWechatEditor == focus &&
+                    isExpectedChatEditor(currentInputEditorInfo)
+                ) {
+                    commitCandidate(manual)
+                } else {
+                    toastLocal("微信输入框已改变，请重新核对候选")
+                }
             })
         }
 
