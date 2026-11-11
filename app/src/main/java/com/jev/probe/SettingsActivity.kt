@@ -154,11 +154,17 @@ class SettingsActivity : AppCompatActivity() {
             if (provider == Prefs.PROVIDER_CUSTOM && model.isBlank()) {
                 judgeResult.text = "请填写服务商支持的模型名称"; return@cardBtn
             }
-            val probe = draftPrefs(SCRATCH_JUDGE) {
+            val probe = try {
+                draftPrefs(SCRATCH_JUDGE) {
                 judgeProvider = provider
                 judgeBaseUrl = base.ifBlank { defaultJudgeBase(provider) }
                 judgeKey = key
                 judgeModel = model.ifBlank { defaultJudgeModel(provider) }
+                }
+            } catch (e: Exception) {
+                runCatching { clearScratch(SCRATCH_JUDGE) }
+                judgeResult.text = "安全存储暂不可用，未发起模型测试"
+                return@cardBtn
             }
             worker.execute {
                 val t0 = System.currentTimeMillis()
@@ -222,13 +228,19 @@ class SettingsActivity : AppCompatActivity() {
             val model = replyModelEdit.text.toString().trim()
             val judgeBaseNow = judgeBaseEdit.text.toString().trim()
             val judgeProviderNow = resolveJudgeProvider(judgeProviderIdx, judgeBaseNow)
-            val probe = draftPrefs(SCRATCH_REPLY) {
+            val probe = try {
+                draftPrefs(SCRATCH_REPLY) {
                 judgeProvider = judgeProviderNow
                 judgeBaseUrl = judgeBaseNow.ifBlank { defaultJudgeBase(judgeProviderNow) }
                 judgeKey = judgeKeyEdit.text.toString().trim()
                 replyBaseUrl = base.ifBlank { Prefs.DEFAULT_REPLY_BASE }
                 replyKey = replyKeyEdit.text.toString().trim()
                 replyModel = model.ifBlank { Prefs.DEFAULT_REPLY_MODEL }
+                }
+            } catch (e: Exception) {
+                runCatching { clearScratch(SCRATCH_REPLY) }
+                replyResult.text = "安全存储暂不可用，未发起模型测试"
+                return@cardBtn
             }
             if (probe.effectiveReplyKey().isBlank()) {
                 clearScratch(SCRATCH_REPLY)
@@ -338,7 +350,8 @@ class SettingsActivity : AppCompatActivity() {
             }
             val judgeBaseNow = judgeBaseEdit.text.toString().trim()
             val judgeProviderNow = resolveJudgeProvider(judgeProviderIdx, judgeBaseNow)
-            val probe = draftPrefs(SCRATCH_VISION) {
+            val probe = try {
+                draftPrefs(SCRATCH_VISION) {
                 judgeProvider = judgeProviderNow
                 judgeBaseUrl = judgeBaseNow.ifBlank { defaultJudgeBase(judgeProviderNow) }
                 judgeKey = judgeKeyEdit.text.toString().trim()
@@ -347,6 +360,11 @@ class SettingsActivity : AppCompatActivity() {
                 visionBaseUrl = visionBase
                 visionKey = visionKeyEdit.text.toString().trim()
                 visionModel = visionModelNow
+                }
+            } catch (e: Exception) {
+                runCatching { clearScratch(SCRATCH_VISION) }
+                visionResult.text = "安全存储暂不可用，未发起模型测试"
+                return@cardBtn
             }
             if (probe.effectiveVisionKey().isBlank()) {
                 clearScratch(SCRATCH_VISION)

@@ -33,3 +33,13 @@
 - 新 Debug arm64 APK **28,991,354 bytes**，SHA-256 `BFDD8A8B233E38D1A38151B2CD89F957CA4FA70074CA37D7624BF530A376BF96`，Android APK Signature Scheme v2 PASS、原测试证书 digest `e92e4d40ce7694bce8d54dec2eb7e23afcd1a871891fe11e50cfec5ce57afa3f`。
 - 静态安全合同检查 `STATIC_SECRET_IME_ACCESSIBILITY_SAFETY=PASS`（新写入不含任何 `putString(legacyPlainPref, value)`、非微信 IME View 创建不自动 `commitCandidate`、`manualReadRoot` 不枚举微信/未知 App、设置页密钥保存失败会中止其他配置写入）。
 - 本次**没有读取、清除、写入任何真实用户 Key，也没有调用付费模型或访问微信消息**。新 Debug APK 只完成本机构建与签名，尚未安装 Note9；新的 KeyStore 行为应在独立 SOURCE_HIGH Review 后以无敏感数据的 `SecuritySelfCheck` 正向真机验收，负例由纯 JVM 故障注入覆盖。
+
+## 2026-11-11 19:5x +08 砚宝独立审核与连接测试异常收口
+
+- GitHub PR #1 对 HEAD `11bc6fa00896651fcf8d905d6795cb3f94ae4a28` 已有 `xst-yan` 正式 SOURCE_HIGH APPROVED `5858186104`（2026-11-11T11:43:59Z），Critical 0 / MUST_FIX 0 / SHOULD_FIX 1 / OPTIONAL 2。原 S1/S2/S3 均确认修复；新增唯一 SHOULD：三个模型连通测试按钮 `draftPrefs` 原在 UI 主线程给 scratch 写密钥，因新 fail-closed 抛出异常时可能崩溃。正式 GitHub Actions 仍因平台 HTTP 422「Actions has been disabled for this repository」未执行；仓库级策略 `enabled=true` 不能独立说明组织级限制（组织策略只读 API 403）。本轮没有绕过拒绝。
+- 作者 `EmilioJI` 在原 `feature/guofeng-ui` 工作树最小修改 `SettingsActivity` 三个按钮：各自 `draftPrefs` 赋值由显式 `try/catch` 包裹；失败时仅清空**本次 scratch**、显示「安全存储暂不可用，未发起模型测试」、不进入模型 worker、不变更真实配置或密钥，不读取/记录真实 Key。
+- 定向静态核验三处错误捕获和 scratch 清理均存在，`:app:compileDebugKotlin --offline` 使用 5070TI 缓存 Gradle **8.13**（非 Wrapper 8.11.1）在 **37 秒 BUILD SUCCESSFUL**，`git diff --check` PASS。此项只改设置页临时密钥测试异常，不涉及后台模型路线、业务回复或数据库。
+- 新版 `11bc6fa` 已在 Note9 `M2007J22C` 直接 `adb install -r` 安装成功，手机实际已安装 `base.apk` 的 SHA256 **`BFDD8A8B233E38D1A38151B2CD89F957CA4FA70074CA37D7624BF530A376BF96`**（2026-11-11 19:56:37 +08）；更新前后存在 `judge_key_enc_v1` 和 `reply_key_enc_v1` 配置字段，未读取任何值；Vision/Desktop Key 字段原本就不存在，不应作为丢失证据。
+- Android 16 x86_64 模拟器安装同源码测试包 SHA256 `92F09EE6C7A08FAC94B368C076D70F10A3B045E5EC893257749C8EB8CB20923E`，通过 JEV 首页 → 设置 →「功能自检」实际触发 dummy `SecuritySelfCheck`，提示 **`AndroidKeyStore AES-GCM 加解密正常，scratch 无明文残留`**，不使用真实密钥/模型网络。
+- Note9 的同一无害自检尝试因手机电源状态 **`mWakefulness=Asleep`**、uiautomator 只见 `com.android.systemui` 锁屏节点，未真正进入 JEV UI；记 **`NOTE9_DUMMY_KEYSTORE_UI_E2E=NOT_RUN_LOCKED_SCREEN`**，不得编造 PASS，也不尝试绕过锁屏。允许在用户正常解锁后继续，原 Note9 已装的 `11bc6fa` 保持可用。
+- 余下独立审核只复核这一次 SettingsActivity 的异常路径增量；此处安全修复不要求重复整库单测、微信 A/B 或已完成的模拟器密钥自检；GitHub-hosted CI 保持 NOT_RUN、父 PR 仍 Draft/OPEN、不合并/不发布。
