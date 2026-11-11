@@ -43,3 +43,17 @@
 - 待用户在 Note9 的「文件管理 → 下载」中主动打开此 APK、核对「小书童·知言」Debug 试用版后**通过标准系统安装确认**。在用户给出安装回执前，`DEVICE_INSTALL_PASS=NOT_VERIFIED`、`DEVICE_WECHAT_COPY_ANALYSIS_E2E=NOT_RUN`；不能把文件传输或模拟器证据当成真机安装成功。
 - 2026-11-11 当前 HEAD 的 GitHub combined statuses 为空、associated PR workflow runs 为空：`CI_PASS=NOT_RUN`。避免为这次可逆安装准备额外运行无关 CI；既有安全门禁照常保留。
 - 后续真机验收仅用测试微信里的合成聊天内容，不读取真实联系人私聊。手机上任何悬浮窗、输入法切换、模型 API 密钥、安装确认均需经用户本人明确操作或既有有效授权；绝不自动发送微信消息。
+
+## 2026-11-11 Note9 悬浮窗授权与微信前台实机核验
+
+用户现场回执“悬浮窗已允许”；下列检查均在授权设备 **Redmi Note9 / M2007J22C / Android 12 API31** 实时经 ADB **只读元数据**完成。基准 JEV GitHub 源码 `527176fa234d012897577a1d9497f6cd54641bd3`，此后无功能源码变更（文档提交不影响 APK）。
+
+- 安装：主用户 `user 0` 已有 `com.jev.probe.guofeng`，`versionCode=4`、`versionName=1.3-guofeng-debug`，Android PackageManager 安装来源为 `com.miui.packageinstaller`，安装包 SHA256 **`7C72420E1F04E247FD0D7B4C8A983F65B782768BBC4EB3021B1B74BD61DAA112`**，与事先传到 Download 目录、用户通过系统安装器确认的候选包字节一致。分身 `user 999` 未安装 JEV。
+- 权限：通过手机系统原生 `Settings$OverlaySettingsActivity` 打开小书童·知言的“允许显示在其他应用的上层”，首次检查开关 `checked=false`。用户本人打开后，再次查询 `cmd appops get com.jev.probe.guofeng SYSTEM_ALERT_WINDOW` 返回 **`allow`**。没有用 ADB `appops set`、`pm grant` 或隐藏方式代替用户授权。Android 包权限记录的 `granted=false` 与 AppOps 特殊权限 `allow` 是不同表示，以实际窗口创建及 AppOps 为准。
+- 前台与服务：重新通过系统 ActivityManager 打开 JEV `MainActivity` 获得 `Status: ok`，应用进程保持运行，`KeepAliveService` 已在系统服务清单中。
+- 实际悬浮球：WindowManager 与 JEV 过滤后的安全日志共同确认 `overlay added type=2038`、`ty=APPLICATION_OVERLAY`、`mHasSurface=true`、`isReadyForDisplay()=true`、`isVisible=true`；窗口框 `[22,512][165,655]`，未输出截图或用户聊天正文。
+- **微信前台交叉核验**：调用官方启动 Intent 仅把已安装的 `com.tencent.mm/.ui.LauncherUI` 切到前台（没有进入联系人或发消息），随后确认 Note9 同一 JEV 悬浮窗窗口继续存在：`mViewVisibility=0x0`、`mHasSurface=true`、`isVisible=true`。同时 JEV 进程及 `KeepAliveService` 持续运行，`SYSTEM_ALERT_WINDOW: allow`。这是 **WECHAT_FOREGROUND_OVERLAY=PASS**，不同于微信 A/B 联系人识别/回复填入的 E2E。
+- 用户原搜狗输入法仍未更改；未读取剪贴板、微信消息、联系人或数据库，也未调用 AI 模型/发送消息。下一步需用户在 Note9 选择**无敏感内容的测试微信消息**，主动复制，再轻点 JEV 悬浮球；检查前台剪贴板 Activity 的流转与不含 API Key 时的明示反馈。模型候选及真机 IME 填入仍 **NOT_VERIFIED**。
+- GitHub PR #21 保持 Draft，未合并/发布；Note9 `INSTALL=PASS`、`OVERLAY_USER_GRANT=PASS`、`OVERLAY_SYSTEM_WINDOW=PASS`、`WECHAT_FOREGROUND_OVERLAY=PASS`、`CLIPBOARD_REAL_E2E=NOT_RUN`。
+
+以上为对用户已授权的 JEV 安装和标准 Android 悬浮窗功能的必要验收，不扩大数据收集或自动化权限。
