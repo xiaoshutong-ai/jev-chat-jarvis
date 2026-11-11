@@ -31,3 +31,15 @@
 5. 在面板中看到候选回复后，阅读确认是否适合当前聊天，再点击“填入”走系统 IME，或点击“复制”后手动粘贴。**不会自动发送**。
 
 本方案是**用户主动复制的前台分析**；仍不具备微信自动历史同步、准确自动识别联系人身份、无操作抓取微信 A/B 消息的能力。此前调试器取钥流程已被安全边界拦截，不在本任务中恢复。
+
+## 2026-11-11 Note9 APK 用户确认安装交接
+
+- 当前源码精确 HEAD：`527176fa234d012897577a1d9497f6cd54641bd3`；`feature/session-binding-probe-20261110` / PR #21 Draft。原工作树 `D:\GitHubWork\jev-chat-jarvis-boundary` 与隔离工作树 `D:\GitHubWork\jev-session-binding-pr21-20261110` 均干净，无第二 writer。
+- Note9 的 ADB 序列号 `8txwr49pz9tsr4ei`，型号 `M2007J22C`，Android 12 API 31 / MIUI V14，`arm64-v8a`；当前窗口为 `com.tencent.mm/com.tencent.mm.ui.LauncherUI`。微信安装在 `user 0`，`user 999` 的 XSpace 分身环境没有安装微信。
+- 5070TI 复用 Gradle 8.13 缓存，对精确 HEAD 执行默认 `:app:assembleDebug --offline`：`BUILD SUCCESSFUL`，APK 仅包含 `arm64-v8a` native libraries，包名 `com.jev.probe.guofeng`，版本 `1.3-guofeng-debug`，APK **28,545,096 bytes**，SHA-256 **`7C72420E1F04E247FD0D7B4C8A983F65B782768BBC4EB3021B1B74BD61DAA112`**。本机 `apksigner verify` 显示签名证书 SHA-256 `e92e4d40ce7694bce8d54dec2eb7e23afcd1a871891fe11e50cfec5ce57afa3f`（Debug，仅试点）。
+- 因前次对 Note9 的直接 ADB 安装得到 `INSTALL_FAILED_USER_RESTRICTED: Install canceled by user`，此次**未再尝试直接 ADB 安装、未调整 MIUI 安全设置**。仅把精确 APK 经 ADB **push**（文件传输，不等于安装）到手机公共下载目录：
+  `/sdcard/Download/JEV_Note9_Pilot_20261111_7C72420E1F04.apk`。
+  手机上的 `sha256sum` 与本机字节哈希完全一致，回执 `MOBILE_APK_HASH_MATCH=True`。
+- 待用户在 Note9 的「文件管理 → 下载」中主动打开此 APK、核对「小书童·知言」Debug 试用版后**通过标准系统安装确认**。在用户给出安装回执前，`DEVICE_INSTALL_PASS=NOT_VERIFIED`、`DEVICE_WECHAT_COPY_ANALYSIS_E2E=NOT_RUN`；不能把文件传输或模拟器证据当成真机安装成功。
+- 2026-11-11 当前 HEAD 的 GitHub combined statuses 为空、associated PR workflow runs 为空：`CI_PASS=NOT_RUN`。避免为这次可逆安装准备额外运行无关 CI；既有安全门禁照常保留。
+- 后续真机验收仅用测试微信里的合成聊天内容，不读取真实联系人私聊。手机上任何悬浮窗、输入法切换、模型 API 密钥、安装确认均需经用户本人明确操作或既有有效授权；绝不自动发送微信消息。
