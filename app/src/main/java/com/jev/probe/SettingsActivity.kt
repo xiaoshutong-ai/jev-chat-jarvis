@@ -129,7 +129,7 @@ class SettingsActivity : AppCompatActivity() {
         judgeCard.addView(judgeBaseEdit)
         judgeCard.addView(text(
             "OpenRouter Jev：/alpha/decisions；TypeSafe：/v1/systemone；GLM-4.7：/chat/completions；" +
-                "自定义服务请填写完整的加密连接地址，通常以 https:// 开头。",
+                "自定义服务地址必须以 https:// 开头（仅本机调试地址例外），并填写完整路径。",
             11f, sub
         ))
         judgeCard.addView(label("授权密钥（API Key）"))
@@ -522,7 +522,8 @@ class SettingsActivity : AppCompatActivity() {
 
         // =================== 电脑会话桥（显式授权） ===================
         val showLegacyDesktopSettings = prefs.desktopBridgeEnabled ||
-            prefs.desktopBridgeEndpoint.isNotBlank() || prefs.desktopBridgeAccountRef.isNotBlank()
+            prefs.desktopBridgeEndpoint.isNotBlank() || prefs.desktopBridgeAccountRef.isNotBlank() ||
+            prefs.desktopBridgeToken.isNotBlank()
         if (showLegacyDesktopSettings) root.addView(section("已有电脑连接"))
         val desktopCard = card()
         desktopCard.addView(cardTitle("管理已有电脑连接"))

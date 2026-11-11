@@ -63,5 +63,20 @@ class MobileCopyContractTest(unittest.TestCase):
         self.assertNotIn('root.addView(section("电脑聊天上下文 · 测试版"))', text)
         self.assertIn('prefs.desktopBridgeToken = desktopToken', text)
 
+    def test_custom_service_https_rule_is_explicit(self):
+        text = read('SettingsActivity.kt')
+        self.assertIn('自定义服务地址必须以 https:// 开头', text)
+        self.assertIn('本机调试', text)
+        self.assertNotIn('通常以 https:// 开头', text)
+
+    def test_legacy_desktop_token_only_remains_manageable(self):
+        text = read('SettingsActivity.kt')
+        self.assertIn('prefs.desktopBridgeToken.isNotBlank()', text)
+
+    def test_accessibility_disclosure_does_not_repeat_capture_instruction(self):
+        text = read('MainActivity.kt')
+        self.assertNotIn('截图识字也需你自己选择', text)
+        self.assertIn('截图识字需你主动选择', text)
+
 if __name__ == '__main__':
     unittest.main(verbosity=2)

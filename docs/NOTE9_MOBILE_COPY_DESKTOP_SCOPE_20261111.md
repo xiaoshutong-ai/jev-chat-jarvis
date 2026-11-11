@@ -55,3 +55,13 @@
 最终范围：手机是唯一日常产品。电脑桥源码作为历史实验保留，不发布电脑安装包；未配置用户不见电脑入口，已配置用户仍能管理/关闭连接。不是删除用户文件、密钥、历史记录或已经授予的权限。
 
 当前证据层级：SOURCE_COPY=IMPLEMENTED、COPY_CONTRACT=PASS_7/7、TARGETED_JUNIT=PASS_6/6、EMULATOR_UI=PASS、ARM64_BUILD_SIGNATURE=PASS；NEW_HEAD_INDEPENDENT_REVIEW=NOT_RUN、PINNED_SELF_HOSTED_CI=NOT_RUN、NOTE9_INSTALL=NOT_RUN、PUBLIC_RELEASE=NOT_RUN。
+
+## 2026-11-11 17:xx 北京时间：砚宝审查收口与真机复验
+
+- `xst-yan` 对 HEAD `9868119bec31d2abb26b1320f371730884e973ae` 的新增手机文案 SOURCE_MEDIUM 审核回执已收到：**Critical 0 / MUST_FIX 0 / SHOULD_FIX 1 / OPTIONAL 2**。其正式 GitHub Review 尚未提交；以前的 Review 仅绑定旧 HEAD。这是源码审查意见，不是运行时验收。
+- S1 修复：自定义判断服务地址的说明从「通常以 https:// 开头」改为强制性的「必须以 https:// 开头（仅本机调试地址例外），并填写完整路径」，与既有服务端地址限制一致，未更改实际 URL 校验。
+- O1 修复：历史电脑连接入口显示条件也包含仅保存了配对 token 的旧用户，以便其管理/关闭；没有配置电脑的用户仍不会看到电脑入口。既有桌面连接逻辑、Prefs 数据及权限没有改动。
+- O2 修复：无障碍说明中重复的截图主动触发句去重；保留实际权限范围、默认手机端识字/可选云端识字、文本发送模型、不会自动发送微信消息等必要披露。
+- TDD：先在原代码上新增 3 条单元文案契约，观测 **10 tests / failures=3**，再做上述三处定向修复，最终 **10/10 PASS**。构建：5070TI-JAY / PowerShell 7.6.6 / JDK17 / 复用本地 Gradle 8.13，离线 `:app:assembleDebug` **BUILD SUCCESSFUL**；arm64 Debug APK **28,985,794 bytes**、SHA-256 `D11691385F4456291C7B8BF07D5BAD5418EA0B46747191C479D5ADB78A19A2AA`，v2 签名有效、签名证书与已安装 Note9 同一 digest `e92e4d40ce7694bce8d54dec2eb7e23afcd1a871891fe11e50cfec5ce57afa3f`。
+- Note9 已在上一 HEAD `9868119` 上完成实际安装哈希核对与首页、补充对话、设置页的交互检查（从 JEV 首页正常进入，读取本应用 UI，未调用模型或采集微信消息）；新 APK 安装及新 HEAD 独立增量审查为单独验收边界。
+- Note9 USB：Windows 同时识别 Redmi Note 9 MTP、ADB 和 USB Composite，16:49:22 最后到达记录，此轮短时间 ADB 连接连续正常。MIUI 的 `uiautomator dump` 会提示缺少 `/data/system/theme_config/theme_compatibility.xml`，但实际 UI dump 返回成功、JEV 自身 Activity 正常；不将该警告冒充 USB 断连或应用崩溃。未改 USB 驱动/Windows 电源配置。
