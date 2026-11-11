@@ -3,6 +3,7 @@ package com.jev.probe.jev
 import com.jev.probe.core.ChatSnapshot
 import com.jev.probe.core.Msg
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class JevQuestionsStateWindowTest {
@@ -17,5 +18,23 @@ class JevQuestionsStateWindowTest {
         assertEquals("message-5", items.getJSONObject(0).getString("text"))
         assertEquals("message-24", items.getJSONObject(19).getString("text"))
         assertEquals("other", chat.getString("latest_from"))
+    }
+
+    @Test fun allNativeJudgeQuestionsTreatChatContentsAsUntrustedData() {
+        val questions = JevQuestions.judge()
+        val keys = questions.keys()
+        var checked = 0
+        while (keys.hasNext()) {
+            val q = questions.getJSONObject(keys.next())
+            val instructions = q.getString("instructions")
+            assertTrue(instructions.contains(JevQuestions.CHAT_DATA_NOTE))
+            checked++
+        }
+        assertEquals(7, checked)
+        val ranked = JevQuestions.rankQuestion(listOf("甲", "乙", "丙"))
+        assertTrue(
+            ranked.getJSONObject("best_reply")
+                .getString("instructions").contains(JevQuestions.CHAT_DATA_NOTE)
+        )
     }
 }

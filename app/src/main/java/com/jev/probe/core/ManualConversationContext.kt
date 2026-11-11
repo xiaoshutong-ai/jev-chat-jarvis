@@ -120,7 +120,7 @@ object ManualConversationContext {
 
     private fun activeEntry(nowMs: Long): Entry? {
         val current = entry ?: return null
-        if (nowMs <= 0 || nowMs > current.expiresAtMs) {
+        if (nowMs <= 0 || nowMs >= current.expiresAtMs) {
             clear()
             return null
         }

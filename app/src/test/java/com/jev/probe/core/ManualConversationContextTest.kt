@@ -67,6 +67,7 @@ class ManualConversationContextTest {
         val now = 3_000_000L
         ManualConversationContext.import("我：明白稍后回复你\n对方：好的没问题", false, now)
         assertTrue(ManualConversationContext.status(now).active)
+        assertNull(ManualConversationContext.matchCopiedIncoming("好的没问题", now + 60 * 60_000L))
         assertNull(ManualConversationContext.matchCopiedIncoming("好的没问题", now + 60 * 60_000L + 1))
         assertFalse(ManualConversationContext.status(now + 60 * 60_000L + 1).active)
         ManualConversationContext.import("我：明白稍后回复你\n对方：好的没问题", false, now)

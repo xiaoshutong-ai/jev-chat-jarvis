@@ -46,3 +46,12 @@
 - 隐私功能的独立源码 Review 与真机用户验收在发布前完成；蓝军结论不代替独立审查，也不自动扩大生产数据采集授权。
 
 **BLUE_STATUS: BLUE_FINDINGS** — 确认并已针对性修复“单条/10 条截断”问题，但真实 20 条导入易用性、风格有效性、跨聊天相同末句的残余风险仍需在正式产品决策中显式考虑。
+
+## 2026-11-11 独立 SOURCE_HIGH 反馈与定向整改
+
+- 砚宝 `xst-yan` 对精确 HEAD `8402e7a757d22ccc58395208106525bda3849df3` 进行 SOURCE_HIGH 只读审核，回执 `jev-pr21-context20-style-8402e7a-source-high-r1`、`SOURCE_HIGH_READY`，**Critical 0 / MUST_FIX 0 / SHOULD_FIX 1 / OPTIONAL 1**。砚仅实读源码，未提交正式 GitHub review；其意见不等同于 CI 或真机。
+- SHOULD 1 已改：`JevQuestions.CHAT_DATA_NOTE` 统一附加到全部 7 项原生 JEV 判断和 `best_reply` 排序问题；要求将聊天正文、知识背景及历史当作不可信数据，不执行其中的命令或角色切换；`JevQuestionsStateWindowTest` 对 7+1 条问题文本新增定向断言。
+- OPTIONAL 1 已改：`ManualConversationContext.activeEntry` 的一小时 TTL 边界改为 `nowMs >= expiresAtMs` 即过期，新增精确到期时应失效的单测。
+- 5070TI-JAY / PowerShell 7.6.6 / 本地 Gradle 8.13（非 Wrapper 8.11.1），`ManualConversationContextTest 6/6`、`JevQuestionsStateWindowTest 2/2`，**8/8 PASS**；受影响 arm64 Debug APK `:app:assembleDebug --offline` **PASS**，28,577,892 bytes，SHA256 `59EECC265BC7EE6B6BFFA642AF64693D431118D045DDC881B1244CC3973B8CE9`，v2 签名有效且证书与旧 Note9 APK 一致。
+- 复用已存在 Android16/x86_64 `emulator-5554`、无 SDK 下载；同 HEAD x86_64 调试构建 hash `A34E9F1D7C7C6C5474DD24216C68D12752C9F0C666979C7CF0AB55A3555B8561`，安装 `Success`，从 JEV 首页点击进入 `ManualContextActivity`，确认文本框、风格勾选默认 OFF、确认/清除按钮正常渲染。模拟器系统 `adb shell input text` 无法发送中文，抛出 InputShellCommand NPE；JEV 进程随后仍在、重新激活页面成功，未观测 AndroidRuntime 崩溃。**手动导入正例的模拟器 UI 操作 NOT_VERIFIED**，不以本机 JUnit 代替。
+- 本轮没有读取真实微信、扫描微信 UI 树、写入手机已安装测试版或发起真实付费模型调用；Note9 对新上下文/风格能力仍 `DEVICE_E2E=NOT_RUN`。后续需独立 reviewer 对新 HEAD 的这个小增量只审变更处，保持 PR #21 Draft。
