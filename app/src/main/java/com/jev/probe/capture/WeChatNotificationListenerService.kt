@@ -4,6 +4,8 @@ import android.app.Notification
 import android.service.notification.NotificationListenerService
 import android.service.notification.StatusBarNotification
 import com.jev.probe.core.Prefs
+import com.jev.probe.session.NotificationClickTracker
+import com.jev.probe.session.SessionBindingResolver
 import java.util.concurrent.ConcurrentHashMap
 
 /**
@@ -84,12 +86,44 @@ class WeChatNotificationListenerService : NotificationListenerService() {
         }
 
         val userLabel = n.user?.toString().orEmpty().ifBlank { "default" }
+        // Track only a volatile, per-profile click correlation signal. No UI action.
+        NotificationClickTracker.recordPosted(
+            profileScope = "$WECHAT_PKG@$userLabel",
+            key = n.key,
+            content = text,
+            nowMs = now
+        )
+
         KeepAliveService.pushWeChatNotification(
             this,
             title = title.take(MAX_TITLE_CHARS),
             text = text.take(MAX_TEXT_CHARS),
             postTime = n.postTime.coerceAtLeast(1L),
             userLabel = userLabel
+        )
+    }
+
+    override fun onNotificationRemoved(
+        sbn: StatusBarNotification?,
+        rankingMap: NotificationListenerService.RankingMap?,
+        reason: Int
+    ) {
+        val n = sbn ?: return
+        if (n.packageName != WECHAT_PKG) return
+        if (!::prefs.isInitialized) prefs = Prefs(this)
+        if (!prefs.enabled) return
+        val kind = when (reason) {
+            REASON_CLICK -> SessionBindingResolver.RemovalReason.CLICK
+            REASON_CANCEL, REASON_CANCEL_ALL -> SessionBindingResolver.RemovalReason.USER_DISMISSED
+            REASON_APP_CANCEL, REASON_APP_CANCEL_ALL -> SessionBindingResolver.RemovalReason.APP_CANCEL
+            else -> SessionBindingResolver.RemovalReason.OTHER
+        }
+        val userLabel = n.user?.toString().orEmpty().ifBlank { "default" }
+        NotificationClickTracker.recordRemoved(
+            profileScope = "$WECHAT_PKG@$userLabel",
+            key = n.key,
+            reason = kind,
+            nowMs = System.currentTimeMillis()
         )
     }
 

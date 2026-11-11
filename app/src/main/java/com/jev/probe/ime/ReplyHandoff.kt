@@ -30,17 +30,30 @@ object ReplyHandoff {
         armedAt = System.currentTimeMillis()
     }
 
+    /** Peek does not lose a user-selected reply when MIUI restarts the IME view. */
     @Synchronized
-    fun consumeArmed(now: Long = System.currentTimeMillis()): String? {
+    fun peekArmed(now: Long = System.currentTimeMillis()): String? {
         val text = armedText
-        if (text.isNullOrBlank() || armedAt <= 0L || now - armedAt > ARMED_TTL_MS) {
-            armedText = null
-            armedAt = 0L
+        if (text.isNullOrBlank() || armedAt <= 0L ||
+            now < armedAt || now - armedAt > ARMED_TTL_MS
+        ) {
+            clearArmed()
             return null
         }
+        return text
+    }
+
+    @Synchronized
+    fun consumeArmed(now: Long = System.currentTimeMillis()): String? {
+        val text = peekArmed(now)
+        clearArmed()
+        return text
+    }
+
+    @Synchronized
+    fun clearArmed() {
         armedText = null
         armedAt = 0L
-        return text
     }
 
     @Synchronized

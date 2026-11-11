@@ -27,6 +27,10 @@ val releaseProps = Properties().apply {
     }
 }
 
+// Explicit opt-in for an x86_64 emulator test build; normal Debug/Release
+// continue to package only arm64-v8a, preserving the installed phone baseline.
+val debugEmulatorAbi = providers.gradleProperty("jevEmulatorAbi").orNull == "x86_64"
+
 android {
     namespace = "com.jev.probe"
     compileSdk = 36
@@ -38,12 +42,10 @@ android {
         versionCode = 4
         versionName = "1.3"
 
-        // ML Kit's bundled Chinese recognizer ships native libs for every ABI.
-        // The target phone (and every phone this can run on: minSdk 30) is
-        // arm64, so keep only that one — the other three are dead weight.
-        ndk {
-            abiFilters += listOf("arm64-v8a")
-        }
+        // Native ABI is selected per build type. Regular phone builds remain
+        // arm64-only; an explicit test-only property supports the already
+        // installed x86_64 Android emulator, with no extra system image.
+
     }
 
     signingConfigs {
@@ -63,8 +65,14 @@ android {
             // requiring an uninstall that would wipe API keys and local history.
             applicationIdSuffix = ".guofeng"
             versionNameSuffix = "-guofeng-debug"
+            ndk {
+                abiFilters += if (debugEmulatorAbi) listOf("x86_64") else listOf("arm64-v8a")
+            }
         }
         release {
+            ndk {
+                abiFilters += listOf("arm64-v8a")
+            }
             isMinifyEnabled = false
             signingConfig = signingConfigs.findByName("release")
         }

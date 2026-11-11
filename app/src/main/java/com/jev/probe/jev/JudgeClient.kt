@@ -60,7 +60,8 @@ class JudgeClient(private val prefs: Prefs) : JudgeEngine {
         ctx: ChatContext?
     ): List<RankedReply> {
         val questions = JSONObject().put("best_reply",
-            JevQuestions.rankQuestion(candidates).getJSONObject("best_reply"))
+            JevQuestions.rankQuestion(candidates, prefs.replyStylePrompt)
+                .getJSONObject("best_reply"))
         val answers = postDecisions(snapshot, relationship, ctx, questions)
         return parseRanked(answers.optJSONObject("best_reply"), candidates)
     }

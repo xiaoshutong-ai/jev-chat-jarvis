@@ -28,7 +28,9 @@ data class ChatSnapshot(
     val title: String?,
     val messages: List<Msg>,
     val bubbleRects: List<BubbleRect> = emptyList(),
-    val note: String? = null
+    val note: String? = null,
+    /** Optional user-labelled authentic outgoing examples; never AI candidates. */
+    val styleExamples: List<String> = emptyList()
 ) {
     val latestFrom: String? get() = messages.lastOrNull()?.side
 

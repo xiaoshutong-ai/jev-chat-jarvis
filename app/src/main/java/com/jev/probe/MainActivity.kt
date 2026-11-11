@@ -78,11 +78,11 @@ class MainActivity : AppCompatActivity() {
 
         container.addView(readinessCard(ready, notifications, overlay, key))
 
-        container.addView(sectionTitle("启用准备", "微信基础模式只需悬浮窗 + 模型；通知权限可把操作降到一键"))
+        container.addView(sectionTitle("启用准备", "复制消息后，点悬浮球获取回复建议"))
         container.addView(permissionCard(
             mark = "浮",
             title = "悬浮窗权限",
-            desc = "微信 A / B 共用的常驻入口",
+            desc = "在微信等应用上显示助手入口",
             granted = overlay
         ) {
             startActivity(Intent(
@@ -92,8 +92,8 @@ class MainActivity : AppCompatActivity() {
         })
         container.addView(permissionCard(
             mark = "讯",
-            title = "微信通知访问（推荐）",
-            desc = "新消息到达后自动准备上下文；点一次悬浮球即可分析",
+            title = "微信消息通知（可选）",
+            desc = "接收通知中显示的消息摘要，不等于完整聊天记录",
             granted = notifications
         ) {
             showNotificationDisclosure()
@@ -101,7 +101,7 @@ class MainActivity : AppCompatActivity() {
         container.addView(permissionCard(
             mark = "读",
             title = "无障碍权限（可选）",
-            desc = "仅用于 QQ / X / 飞书适配和可选本地截屏，不是微信必需",
+            desc = "用于其他应用的页面读取或主动截图识字",
             granted = a11y
         ) {
             showAccessibilityDisclosure()
@@ -109,7 +109,7 @@ class MainActivity : AppCompatActivity() {
         container.addView(permissionCard(
             mark = "入",
             title = "小书童·快捷填入（可选）",
-            desc = "点候选后通过 Android 标准输入法接口写入，随后切回原键盘",
+            desc = "选择专用键盘后，点回复即可填入；由你发送",
             granted = ime
         ) {
             showImeDisclosure()
@@ -117,7 +117,7 @@ class MainActivity : AppCompatActivity() {
         container.addView(permissionCard(
             mark = "稳",
             title = "自启动与省电设置",
-            desc = "国产 ROM 建议设为允许自启动、后台不限",
+            desc = "悬浮球容易消失时，可允许自启动和后台运行",
             granted = null
         ) {
             runCatching {
@@ -128,13 +128,24 @@ class MainActivity : AppCompatActivity() {
             }
         })
 
-        container.addView(sectionTitle("常用入口", "把上下文与模型配置分开管理"))
+        container.addView(sectionTitle("常用入口", "补充聊天背景，设置你的回复方式"))
         container.addView(shortcutRow())
+
+        // Optional, user-labelled and memory-only. No new app permissions.
+        container.addView(infoStrip(
+            "补充最近对话",
+            "粘贴最近的对话，最多使用 20 条；不会自动读取微信历史。"
+        ).apply {
+            isClickable = true
+            setOnClickListener {
+                startActivity(Intent(this@MainActivity, ManualContextActivity::class.java))
+            }
+        })
 
         if (!prefs.contextEnabled) {
             container.addView(infoStrip(
-                "关联上下文当前关闭",
-                "不会写入聊天历史；需要长期记忆时再在设置中开启。"
+                "长期聊天记录未开启",
+                "你仍可临时补充最近对话；长期保存需在设置中另行开启。"
             ))
         }
 
@@ -151,7 +162,7 @@ class MainActivity : AppCompatActivity() {
         })
 
         container.addView(text(
-            "微信 · QQ · X · 飞书  |  默认复制；可选快捷输入法直接填入，发送仍由你完成",
+            "复制消息 → 获取回复建议 → 选择或修改后，由你发送",
             11.5f,
             Guofeng.INK_FAINT
         ).apply {
@@ -368,7 +379,7 @@ class MainActivity : AppCompatActivity() {
 
         row.addView(shortcutCard(
             mark = "册",
-            title = "知识库与联系人",
+            title = "联系人与备注",
             desc = "关系 · 备注 · 历史",
             primary = true
         ) {
@@ -377,8 +388,8 @@ class MainActivity : AppCompatActivity() {
 
         row.addView(shortcutCard(
             mark = "调",
-            title = "接口与分析",
-            desc = "模型 · 密钥 · OCR",
+            title = "模型与回复风格",
+            desc = "服务设置 · 说话方式",
             primary = false
         ) {
             startActivity(Intent(this, SettingsActivity::class.java))
@@ -512,10 +523,10 @@ class MainActivity : AppCompatActivity() {
         AlertDialog.Builder(this)
             .setTitle("小书童·快捷填入")
             .setMessage(
-                "这是可选的一次性辅助输入法，不替代你的日常键盘。Android 会把已启用输入法视为可用于文本编辑器的高敏感能力；" +
-                    "只有你主动选择“小书童·快捷填入”时它才成为当前输入法。\n\n" +
-                    "本版本只通过标准 InputConnection.commitText 写入你选中的候选，不读取光标前后文字、不读取选中文本、不记录你手工键入的内容，" +
-                    "不会查找微信控件、不会模拟点击、不会触发“发送”；写入后会尝试自动切回上一个输入法。"
+                "开启后，系统允许你把“小书童·快捷填入”选为键盘。输入法属于敏感权限，" +
+                    "只有你切换到它时，助手才会在当前输入框工作。\n\n" +
+                    "点选回复后只填入文字，不读取输入框已有内容，不记录你手工输入的内容，也不会自动发送。" +
+                    "填入后会尝试切回原键盘；你也可以点“返回原键盘”。"
             )
             .setNegativeButton("暂不开启", null)
             .setPositiveButton("前往输入法设置") { _, _ ->
@@ -528,10 +539,10 @@ class MainActivity : AppCompatActivity() {
         AlertDialog.Builder(this)
             .setTitle("微信通知访问")
             .setMessage(
-                "这是当前推荐的低风险便捷模式。Android 的“通知访问”属于系统级权限，授权后系统会把设备通知事件提供给本服务；" +
-                    "小书童代码在入口处只处理微信（com.tencent.mm）通知，其他 App 通知会立即忽略，不写入本地历史，也不发送给模型。\n\n" +
-                    "对微信，小书童只使用系统通知里已经显示的会话标题、消息摘要和通知时间；不会打开微信、不会读取微信内部控件、不会模拟点击。\n\n" +
-                    "默认行为是“新消息到达→悬浮球提示→你点一下才分析”；你也可以在设置中显式开启“通知到达即分析”。"
+                "开启后，系统会允许此服务接收通知。助手只处理微信通知，忽略其他应用通知。\n\n" +
+                    "使用的内容是通知中显示的名称、消息摘要和时间，不是完整聊天记录；不会读取微信聊天页面。\n\n" +
+                    "默认由你点击后才分析。你也可以在设置中另行开启自动分析；" +
+                    "分析时内容会发送给你选择的模型服务商，可能收费。助手不会自动发送消息。"
             )
             .setNegativeButton("暂不开启", null)
             .setPositiveButton("前往系统设置") { _, _ ->
@@ -551,16 +562,19 @@ class MainActivity : AppCompatActivity() {
             setPadding(dp(20), dp(8), dp(20), dp(8))
 
             addView(text(
-                "小书童·知言使用标准 Android 无障碍能力，主要用于你主动发起的当前页面分析和可选的本地截屏识别。",
+                "这项权限可用于读取其他应用的当前页面，或在你主动选择时截图识字。普通微信复制分析不需要开启。",
                 14f,
                 Guofeng.INK,
                 bold = true
             ))
             addView(text(
-                "开启后，服务具备访问当前活动窗口中可见文字、控件结构和会话标题的能力，也具备系统截屏能力。\n\n" +
-                    "微信默认采用主动模式：不会因为收到消息就在后台持续读取聊天树；只有你点击悬浮球发起分析时，才会尝试读取当前可见内容。你也可以主动选择本地 ML Kit 截屏识别，本地 OCR 不需要图像 API Key，也不会上传截图。只有你以后明确选择“视觉 API”时，才会把裁剪后的聊天区域发送到你配置的视觉服务商。\n\n" +
-                    "用途：你主动提交的内容用于生成意图判断和候选回复；只有你另外开启关联上下文时，相关历史才会写入本机。分析文本会发送给你在设置中选择的判断/回复模型服务商。\n\n" +
-                    "小书童·知言不会读取微信数据库，不使用 Hook、Root 或私有协议，不会自动点击发送。微信候选回复默认只复制到剪贴板，由你自行粘贴并发送。你可以随时在系统无障碍设置中关闭此权限。",
+                "系统会授予读取屏幕可见文字、页面结构和截图的能力。微信消息仍由你主动复制提供，" +
+                    "不会读取微信数据库，也不会自动点击发送。\n\n" +
+                    "截图识字需你主动选择。默认在手机上识别，不上传图片；只有你改选“云端识别”后，" +
+                    "裁剪的聊天图片才会发送给你配置的图片识别服务。\n\n" +
+                    "发起分析时，文字会发送给你选择的模型服务商，用于生成回复建议，可能收费。" +
+                    "只有另行开启长期聊天记录，相关内容才会保存到本机。\n\n" +
+                    "回复由你确认并发送；你可以随时在系统设置中关闭这项权限。",
                 13f,
                 Guofeng.INK_SOFT
             ).apply { setPadding(0, dp(12), 0, 0) })
@@ -572,7 +586,7 @@ class MainActivity : AppCompatActivity() {
         }
 
         AlertDialog.Builder(this)
-            .setTitle("无障碍访问披露")
+            .setTitle("无障碍权限说明")
             .setView(scroll)
             .setNegativeButton("不同意") { dialog, _ -> dialog.dismiss() }
             .setPositiveButton("同意并前往系统设置") { _, _ ->

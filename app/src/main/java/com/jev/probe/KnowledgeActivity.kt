@@ -68,10 +68,10 @@ class KnowledgeActivity : AppCompatActivity() {
 
     private fun render() {
         container.removeAllViews()
-        container.addView(text("知识库与联系人", 27f, Guofeng.JADE_DEEP, bold = true, serif = true))
-        container.addView(text("一册知人，一册记事 · 数据只留在本机",
+        container.addView(text("联系人与备注", 27f, Guofeng.JADE_DEEP, bold = true, serif = true))
+        container.addView(text("联系人和备注保存在这部手机上",
             12.5f, Guofeng.GOLD).apply { setPadding(0, dp(4), 0, dp(2)) })
-        container.addView(text("分析时按会话标题匹配联系人，并按关键词带入相关笔记。",
+        container.addView(text("分析时，相关备注会交给你选择的模型服务商。复制微信消息时无法确认联系人，请核对适用对象。",
             11.5f, sub).apply { setPadding(0, dp(2), 0, dp(4)) })
         container.addView(tabs())
         if (tab == 0) renderNotes() else renderContacts()
@@ -112,7 +112,7 @@ class KnowledgeActivity : AppCompatActivity() {
             return
         }
         notes.forEach { container.addView(noteRow(it)) }
-        container.addView(text("点条目编辑，长按删除。命中规则：任一标签或标题出现在会话标题或最近 6 条消息里。",
+        container.addView(text("点击编辑，长按删除。对话提到标题或标签时，会参考相应笔记。",
             11f, sub).apply { setPadding(dp(2), dp(12), 0, 0) })
     }
 
@@ -125,7 +125,7 @@ class KnowledgeActivity : AppCompatActivity() {
             orientation = LinearLayout.VERTICAL
             layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
         }
-        val head = n.title.ifBlank { "（无标题）" } + if (n.alwaysOn) "  · 常驻" else ""
+        val head = n.title.ifBlank { "（无标题）" } + if (n.alwaysOn) "  · 每次参考" else ""
         left.addView(text(head, 15f, ink, bold = true, serif = true))
         left.addView(text(
             if (n.tags.isEmpty()) "无标签" else "标签：" + n.tags.joinToString("、"),
@@ -155,7 +155,7 @@ class KnowledgeActivity : AppCompatActivity() {
             minLines = 4; gravity = Gravity.TOP
         }
         val tagsEdit = edit(existing?.tags?.joinToString("，") ?: "", "逗号分隔，例如：吃饭，周末")
-        val alwaysRow = toggleRow("常驻（每次分析都带上）", existing?.alwaysOn ?: false)
+        val alwaysRow = toggleRow("每次分析都参考（包括其他联系人）", existing?.alwaysOn ?: false)
         val enabledRow = toggleRow("启用", existing?.enabled ?: true)
         box.addView(label("标题")); box.addView(titleEdit)
         box.addView(label("正文")); box.addView(contentEdit)
@@ -231,7 +231,7 @@ class KnowledgeActivity : AppCompatActivity() {
             return
         }
         contacts.forEach { container.addView(contactRow(it)) }
-        container.addView(text("点条目编辑，长按删除。会话标题等于名字或任一别名即算命中（忽略大小写与群人数后缀）。",
+        container.addView(text("点击编辑，长按删除。能识别会话名称时会参考对应档案；复制微信消息时不会自动确认联系人。",
             11f, sub).apply { setPadding(dp(2), dp(12), 0, 0) })
     }
 
@@ -267,7 +267,7 @@ class KnowledgeActivity : AppCompatActivity() {
                 }
                 confirm(
                     "清空历史与摘要",
-                    "删掉「${c0.name}」的 $logN 条聊天历史及其派生摘要？联系人档案保留。"
+                    "删掉「${c0.name}」的 $logN 条聊天记录和摘要？联系人档案保留。"
                 ) {
                     store.clearLog(c0.id)
                     render()

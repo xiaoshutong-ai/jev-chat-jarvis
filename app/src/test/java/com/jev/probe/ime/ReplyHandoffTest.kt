@@ -34,6 +34,15 @@ class ReplyHandoffTest {
     }
 
     @Test
+    fun miuiImeRecreationDoesNotConsumeUserSelectedCandidate() {
+        ReplyHandoff.arm("keep across input restart")
+        assertEquals("keep across input restart", ReplyHandoff.peekArmed())
+        assertEquals("keep across input restart", ReplyHandoff.peekArmed())
+        assertEquals("keep across input restart", ReplyHandoff.consumeArmed())
+        assertEquals(null, ReplyHandoff.peekArmed())
+    }
+
+    @Test
     fun armedReplyExpiresQuickly() {
         ReplyHandoff.arm("short lived")
         assertEquals(null, ReplyHandoff.consumeArmed(System.currentTimeMillis() + 61_000L))

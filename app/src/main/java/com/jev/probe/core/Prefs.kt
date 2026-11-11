@@ -115,6 +115,15 @@ class Prefs(context: Context, prefsName: String = PREFS_MAIN) {
         get() = sp.getString(K_REPLY_MODEL, DEFAULT_REPLY_MODEL) ?: DEFAULT_REPLY_MODEL
         set(v) = sp.edit().putString(K_REPLY_MODEL, v.trim()).apply()
 
+    /**
+     * User-owned global reply tone prompt. Blank = everyday natural chat.
+     * Stored only in this app's private preferences, not in chat history.
+     * Sent to the chosen reply and ranking providers only on user-authorized analysis.
+     */
+    var replyStylePrompt: String
+        get() = ReplyStylePolicy.normalize(sp.getString(K_REPLY_STYLE, "") ?: "")
+        set(v) = sp.edit().putString(K_REPLY_STYLE, ReplyStylePolicy.normalize(v)).apply()
+
     // --------------------------------------------------------------- vision
 
     /**
@@ -134,6 +143,32 @@ class Prefs(context: Context, prefsName: String = PREFS_MAIN) {
     var visionModel: String
         get() = sp.getString(K_VISION_MODEL, DEFAULT_VISION_MODEL) ?: DEFAULT_VISION_MODEL
         set(v) = sp.edit().putString(K_VISION_MODEL, v.trim()).apply()
+
+    // --------------------------------------------- desktop peer (opt-in)
+    /**
+     * This is independent from WeChat notification access. The user must
+     * explicitly approve pairing and separately enable paid AI analysis.
+     * Neither switch is enabled during migration or by default.
+     */
+    var desktopBridgeEnabled: Boolean
+        get() = sp.getBoolean(K_DESKTOP_BRIDGE_ENABLED, false)
+        set(v) = sp.edit().putBoolean(K_DESKTOP_BRIDGE_ENABLED, v).apply()
+
+    var desktopBridgeEndpoint: String
+        get() = sp.getString(K_DESKTOP_BRIDGE_URL, "") ?: ""
+        set(v) = sp.edit().putString(K_DESKTOP_BRIDGE_URL, v.trim()).apply()
+
+    var desktopBridgeAccountRef: String
+        get() = sp.getString(K_DESKTOP_ACCOUNT_REF, "") ?: ""
+        set(v) = sp.edit().putString(K_DESKTOP_ACCOUNT_REF, v.trim()).apply()
+
+    var desktopBridgeToken: String
+        get() = readSecret(K_DESKTOP_BRIDGE_TOKEN, K_DESKTOP_BRIDGE_TOKEN_ENC)
+        set(v) = writeSecret(K_DESKTOP_BRIDGE_TOKEN, K_DESKTOP_BRIDGE_TOKEN_ENC, v.trim())
+
+    var desktopAutoAnalyze: Boolean
+        get() = sp.getBoolean(K_DESKTOP_AUTO_ANALYZE, false)
+        set(v) = sp.edit().putBoolean(K_DESKTOP_AUTO_ANALYZE, v).apply()
 
     // -------------------------------------------------------- context (D)
 
@@ -333,6 +368,12 @@ class Prefs(context: Context, prefsName: String = PREFS_MAIN) {
         private const val K_LEGACY_KEY = "openrouter_key"
         private const val K_MIGRATED_V13 = "prefs_migrated_v13"
         private const val K_SAFETY_MIGRATED = "prefs_safety_active_mode_v1"
+        private const val K_DESKTOP_BRIDGE_ENABLED = "desktop_bridge_enabled_v1"
+        private const val K_DESKTOP_BRIDGE_URL = "desktop_bridge_url_v1"
+        private const val K_DESKTOP_ACCOUNT_REF = "desktop_bridge_account_ref_v1"
+        private const val K_DESKTOP_BRIDGE_TOKEN = "desktop_bridge_token"
+        private const val K_DESKTOP_BRIDGE_TOKEN_ENC = "desktop_bridge_token_enc_v1"
+        private const val K_DESKTOP_AUTO_ANALYZE = "desktop_auto_analyze_v1"
         private const val K_JUDGE_PROVIDER = "judge_provider"
         private const val K_JUDGE_BASE = "judge_base_url"
         private const val K_JUDGE_KEY = "judge_key"
@@ -342,6 +383,7 @@ class Prefs(context: Context, prefsName: String = PREFS_MAIN) {
         private const val K_REPLY_KEY = "reply_key"
         private const val K_REPLY_KEY_ENC = "reply_key_enc_v1"
         private const val K_REPLY_MODEL = "reply_model"
+        private const val K_REPLY_STYLE = "reply_style_prompt_v1"
         private const val K_VISION_BASE = "vision_base_url"
         private const val K_VISION_KEY = "vision_key"
         private const val K_VISION_KEY_ENC = "vision_key_enc_v1"
