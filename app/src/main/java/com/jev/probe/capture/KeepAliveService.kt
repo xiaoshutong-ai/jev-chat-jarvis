@@ -88,9 +88,9 @@ class KeepAliveService : Service() {
                 if (prefs.enabled) {
                     val code = intent.getStringExtra(ClipboardImportActivity.EXTRA_STATUS).orEmpty()
                     val message = when (code) {
-                        "NO_FOCUS" -> "系统未能让 JEV 在前台读取剪贴板，请重新复制后再试"
-                        "NO_TEXT" -> "没有找到复制的文字，请先在微信中复制一条测试消息"
-                        "OWN_REPLY" -> "复制的是 JEV 已生成的回复，请在微信中粘贴"
+                        "NO_FOCUS" -> "未能读取复制内容，请重新复制后再点悬浮球"
+                        "NO_TEXT" -> "还没有复制文字，请先在微信长按一条消息并复制"
+                        "OWN_REPLY" -> "你复制的是助手的回复建议，可直接回到微信粘贴"
                         "TOO_LONG" -> "复制文字超过 4000 字，请只选一条消息"
                         "UNAVAILABLE" -> "剪贴板暂时不可访问，请重新复制后再试"
                         else -> "剪贴板读取未完成，请重试"
@@ -141,7 +141,7 @@ class KeepAliveService : Service() {
         }
         val notif = Notification.Builder(this, channelId)
             .setContentTitle("小书童·知言运行中")
-            .setContentText("微信通知到达后可一键分析；发送仍由你完成")
+            .setContentText("复制消息后点悬浮球，回复由你确认并发送")
             .setSmallIcon(android.R.drawable.ic_menu_edit)
             .setOngoing(true)
             .build()
@@ -195,7 +195,7 @@ class KeepAliveService : Service() {
         val snapshot = ChatSnapshot(
             title = title.takeIf { it != "微信消息" },
             messages = messages,
-            note = "微信通知上下文 · 时间来自 Android 通知 · $userLabel；未读取微信内部控件"
+            note = "参考微信通知摘要，可能不完整；显示时间是通知时间"
         )
         analyzeSnapshot(
             snapshot,
@@ -219,7 +219,7 @@ class KeepAliveService : Service() {
         val selected = ExplicitClipboardPolicy.fromUserCopy(raw, now)
         if (selected == null) {
             android.util.Log.i("JEVASSIST", "clipboard_state=INVALID_TEXT")
-            overlay.showError("复制的文字不可分析，请重新复制一条测试消息",
+            overlay.showError("未能识别复制内容，请重新复制一条文字消息",
                 allowClipboardRetry = true)
             return
         }
@@ -259,12 +259,12 @@ class KeepAliveService : Service() {
                     decision.result.replies, error = decision.result.replyError
                 )
                 android.util.Log.i("JEVASSIST", "clipboard_state=CACHED_RESULT")
-                overlay.toast("已恢复之前的候选，不会重复调用模型")
+                overlay.toast("已显示上次回复，没有重新分析")
                 return
             }
             ClipboardAnalysisCache.Decision.Pending -> {
                 android.util.Log.i("JEVASSIST", "clipboard_state=ALREADY_ANALYZING")
-                overlay.toast("这条消息仍在分析，不会重复调用模型")
+                overlay.toast("正在分析这条消息，请勿重复点击")
                 return
             }
             ClipboardAnalysisCache.Decision.New -> Unit
@@ -273,7 +273,7 @@ class KeepAliveService : Service() {
         if (!prefs.hasKey()) {
             clipboardAnalysisCache.fail(cacheKey)
             android.util.Log.i("JEVASSIST", "clipboard_state=MODEL_KEY_MISSING")
-            overlay.showError("已读取复制的消息。要生成候选回复，请先到 JEV 设置中配置模型 API Key。")
+            overlay.showError("已读取消息。请先打开“模型与回复风格”，填写模型服务的授权密钥。")
             return
         }
 
@@ -296,7 +296,7 @@ class KeepAliveService : Service() {
     ) {
         if (!prefs.hasKey()) {
             clipboardCacheKey?.let { clipboardAnalysisCache.fail(it) }
-            overlay.showError("未设置判断接口密钥，去设置里填")
+            overlay.showError("请先在设置中填写分析服务的授权密钥")
             return
         }
         val myEpoch = epoch.incrementAndGet()

@@ -41,7 +41,7 @@ class ManualConversationContextTest {
         val match = ManualConversationContext.matchCopiedIncoming("那你大概什么时候有空", now + 1000L)!!
         assertEquals(2, match.snapshot.messages.size)
         assertNull(match.snapshot.title)
-        assertTrue(match.snapshot.note!!.contains("未核验"))
+        assertTrue(match.snapshot.note!!.contains("请确认聊天对象"))
         assertTrue(match.snapshot.styleExamples.isEmpty())
     }
 

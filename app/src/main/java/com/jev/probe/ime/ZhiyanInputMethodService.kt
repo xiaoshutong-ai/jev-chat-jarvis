@@ -185,10 +185,10 @@ class ZhiyanInputMethodService : InputMethodService() {
 
         // An Android IME sees an editor, not a WeChat conversation ID.
         // Never silently insert the last desktop reply into whichever chat is open.
-        box.addView(infoText("请核对当前微信聊天对象。点击下方候选才会填入，JEV 不会自动发送。"))
+        box.addView(infoText("请先确认当前聊天对象，点选回复后只填入文字，不会自动发送。"))
         val manual = pendingExplicitReply
         if (!manual.isNullOrBlank()) {
-            box.addView(infoText("手动选择的候选 · 未验证联系人"))
+            box.addView(infoText("你选中的回复 · 请确认聊天对象"))
             box.addView(replyButton(manual, true) {
                 if (focusedWechatEditor == focus &&
                     isExpectedChatEditor(currentInputEditorInfo)
@@ -202,7 +202,7 @@ class ZhiyanInputMethodService : InputMethodService() {
 
         val pairedAccount = DesktopPairingState.accountFor(focus.profileScope)
         if (pairedAccount.isNullOrBlank()) {
-            if (manual.isNullOrBlank()) box.addView(infoText("暂无已配对的电脑会话候选。"))
+            if (manual.isNullOrBlank()) box.addView(infoText("暂无可填入的回复，请先点悬浮球分析。"))
             return
         }
         val candidates = DesktopReplyInbox.list(focus.profileScope, pairedAccount)
@@ -216,7 +216,7 @@ class ZhiyanInputMethodService : InputMethodService() {
                 .thenByDescending { it.publishedAtMs }
         ).take(3)
         if (sorted.isEmpty() && manual.isNullOrBlank()) {
-            box.addView(infoText("电脑尚未生成候选，或候选已经过期。"))
+            box.addView(infoText("暂无可用回复，请重新分析。"))
         }
         sorted.forEach { bundle ->
             val source = observedBySession[bundle.sessionId]
@@ -230,9 +230,9 @@ class ZhiyanInputMethodService : InputMethodService() {
                     else -> "电脑会话 · "
                 }
                 val warning = if (isManualSelection) {
-                    "（联系人身份未验证；请核对当前聊天，点击后仅填入）"
+                    "（请确认这是当前聊天对象，点选后只填入文字）"
                 } else {
-                    "（点击候选即确认此对象）"
+                    "（请确认聊天对象后再点选回复）"
                 }
                 box.addView(infoText(label + bundle.displayName + warning))
                 bundle.replies.forEachIndexed { index, reply ->

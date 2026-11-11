@@ -100,7 +100,7 @@ object ManualConversationContext {
             ChatSnapshot(
                 title = null,
                 messages = current.messages.toList(),
-                note = "用户主动导入最近 ${current.messages.size} 条文字；方向由用户标注，消息原时间及微信联系人身份未核验。仅用于本次主动分析。",
+                note = "参考你补充的 ${current.messages.size} 条对话。请确认聊天对象；切换聊天后请重新导入。消息时间未提供。",
                 styleExamples = current.styleSamples.toList()
             ), current.revision
         )

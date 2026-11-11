@@ -73,18 +73,18 @@ class SettingsActivity : AppCompatActivity() {
         scroll.addView(root)
 
         root.addView(header("设置"))
-        root.addView(text("接口 · 分析 · 隐私 · 外观", 12.5f, Guofeng.GOLD).apply {
+        root.addView(text("模型服务 · 回复风格 · 隐私 · 外观", 12.5f, Guofeng.GOLD).apply {
             setPadding(0, dp(2), 0, dp(6))
         })
 
         // =================== 接口 ===================
-        root.addView(section("接口"))
+        root.addView(section("模型服务"))
 
         // --- 判断引擎 ---
         val judgeCard = card()
-        judgeCard.addView(cardTitle("判断引擎"))
+        judgeCard.addView(cardTitle("分析对话"))
         judgeCard.addView(text(
-            "推荐 OpenRouter Jev；TypeSafe 直连仅适合已有 Key；也可用 GLM-4.7 做结构化判断。",
+            "用于理解对话并比较回复建议。选择你已开通的服务，填写相应密钥。",
             12f, sub
         ))
 
@@ -97,7 +97,7 @@ class SettingsActivity : AppCompatActivity() {
             else -> 0
         }
         judgeCard.addView(pills(
-            listOf("OpenRouter（推荐）", "TypeSafe（已有 Key）", "GLM-4.7", "自定义 Jev"), judgeProviderIdx) { idx ->
+            listOf("OpenRouter", "TypeSafe", "GLM-4.7", "自定义 Jev"), judgeProviderIdx) { idx ->
             judgeProviderIdx = idx
             when (idx) {
                 0 -> {
@@ -125,14 +125,14 @@ class SettingsActivity : AppCompatActivity() {
                 }
             }
         })
-        judgeCard.addView(label("Base URL"))
+        judgeCard.addView(label("服务地址"))
         judgeCard.addView(judgeBaseEdit)
         judgeCard.addView(text(
             "OpenRouter Jev：/alpha/decisions；TypeSafe：/v1/systemone；GLM-4.7：/chat/completions；" +
-                "自定义 Jev 按完整 URL POST。自定义公网地址必须 HTTPS（localhost/loopback 调试除外）。",
+                "自定义服务请填写完整的加密连接地址，通常以 https:// 开头。",
             11f, sub
         ))
-        judgeCard.addView(label("密钥"))
+        judgeCard.addView(label("授权密钥（API Key）"))
         judgeCard.addView(edit(prefs.judgeKey, "sk-...", password = true).also { judgeKeyEdit = it })
         judgeCard.addView(label("模型"))
         judgeCard.addView(judgeModelEdit)
@@ -147,12 +147,12 @@ class SettingsActivity : AppCompatActivity() {
             // so a stale pill selection cannot send a TypeSafe path to OpenRouter.
             val provider = resolveJudgeProvider(judgeProviderIdx, base)
             if (provider == Prefs.PROVIDER_CUSTOM && base.isBlank()) {
-                judgeResult.text = "自定义档要填完整 URL（带路径）"; return@cardBtn
+                judgeResult.text = "请填写服务商提供的完整服务地址"; return@cardBtn
             }
             // Custom means we know nothing about the endpoint — guessing a model
             // name here would test something the user never asked for.
             if (provider == Prefs.PROVIDER_CUSTOM && model.isBlank()) {
-                judgeResult.text = "请填写模型名"; return@cardBtn
+                judgeResult.text = "请填写服务商支持的模型名称"; return@cardBtn
             }
             val probe = draftPrefs(SCRATCH_JUDGE) {
                 judgeProvider = provider
@@ -182,10 +182,9 @@ class SettingsActivity : AppCompatActivity() {
 
         // --- 回复接口 ---
         val replyCard = card()
-        replyCard.addView(cardTitle("回复接口"))
+        replyCard.addView(cardTitle("生成回复"))
         replyCard.addView(text(
-            "生成 3 条候选回复。DeepSeek Flash 强制关闭 thinking；GLM-5.3-Flash 强制 reasoning_effort=low。" +
-                " 留空 Key 只在同 host 时继承；自定义公网地址必须 HTTPS。",
+            "用于生成 3 条回复建议。可与分析服务选择不同的模型；使用不同服务时，请分别填写密钥。",
             12f, sub
         ))
 
@@ -207,9 +206,9 @@ class SettingsActivity : AppCompatActivity() {
                 3 -> { replyBaseEdit.setText(Prefs.DASHSCOPE_BASE); replyModelEdit.setText(Prefs.DASHSCOPE_MODEL) }
             }
         })
-        replyCard.addView(label("Base URL"))
+        replyCard.addView(label("服务地址"))
         replyCard.addView(replyBaseEdit)
-        replyCard.addView(label("密钥"))
+        replyCard.addView(label("授权密钥（API Key）"))
         replyCard.addView(edit(
             prefs.replyKey,
             "留空时，仅同服务商可继承判断密钥",
@@ -259,15 +258,15 @@ class SettingsActivity : AppCompatActivity() {
 
         // A persistent global preference, independent of copied chat history.
         // An empty field always uses the natural human-chat default.
-        replyCard.addView(label("我的回复风格 Prompt（可选）"))
+        replyCard.addView(label("我的回复风格（可选）"))
         replyCard.addView(text(
-            "留空就是普通人微信聊天语气，避免 AI 客服套话、过度防守和不必要的客气。" +
-                "填写后优先使用你自己的说话方式；最近 20 条中的本人样本只作补充。",
+            "留空时使用自然、直接的日常聊天语气。" +
+                "填写后优先按你的要求表达；已导入的本人消息仅作参考。",
             12f, sub
         ))
         val stylePromptEdit = edit(
             prefs.replyStylePrompt,
-            "例如：像平时跟朋友聊天，短句、直接，偶尔开玩笑，不用客服话术"
+            "例如：像和朋友聊天，短句、直接，偶尔开玩笑，少用客套话"
         ).apply {
             inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_MULTI_LINE
             minLines = 4
@@ -278,31 +277,30 @@ class SettingsActivity : AppCompatActivity() {
         }
         replyCard.addView(stylePromptEdit)
         replyCard.addView(text(
-            "最多 500 字，保存在本机 JEV 设置中；生成候选时（含你另行开启的电脑自动分析）" +
-                "会发给已配置的回复模型和候选排序模型。修改后同一条消息重新生成可能产生费用。",
+            "最多 500 字，保存在这部手机上。生成回复时，会交给你选择的分析服务和回复服务，可能收费。" +
+                "已开启的自动分析也按同样规则处理；更改风格后，需要重新生成才能看到新效果。",
             11f, sub
         ))
         val styleResult = resultText()
-        replyCard.addView(cardBtn("只保存回复风格") {
+        replyCard.addView(cardBtn("保存回复风格") {
             prefs.replyStylePrompt = stylePromptEdit.text.toString()
             styleResult.text = if (prefs.replyStylePrompt.isBlank()) {
                 "已保存：普通聊天语气"
-            } else "已保存：自定义回复风格（不会立即调用模型）"
+            } else "回复风格已保存"
         })
-        replyCard.addView(cardBtn("恢复默认普通聊天语气") {
+        replyCard.addView(cardBtn("恢复默认语气") {
             stylePromptEdit.setText("")
             prefs.replyStylePrompt = ""
-            styleResult.text = "已恢复普通聊天语气（不会立即调用模型）"
+            styleResult.text = "已恢复自然聊天语气"
         })
         replyCard.addView(styleResult)
         root.addView(replyCard)
 
         // --- 视觉接口 ---
         val visionCard = card()
-        visionCard.addView(cardTitle("视觉接口（远程 OCR，可选）"))
+        visionCard.addView(cardTitle("图片识字服务（可选）"))
         visionCard.addView(text(
-            "只有在下面把 OCR 引擎切到“视觉 API”时才参与实时识别；默认 ML Kit 完全本地。" +
-                "远程模式只上传裁剪后的聊天内容区域；自定义公网地址必须 HTTPS。",
+            "默认在手机上识别文字，不上传图片。改选云端识别后，才会上传你选择的聊天图片区域，可能收费。",
             12f, sub
         ))
 
@@ -320,9 +318,9 @@ class SettingsActivity : AppCompatActivity() {
                 1 -> { visionBaseEdit.setText(Prefs.DASHSCOPE_BASE); visionModelEdit.setText(Prefs.DASHSCOPE_VISION_MODEL) }
             }
         })
-        visionCard.addView(label("Base URL"))
+        visionCard.addView(label("服务地址"))
         visionCard.addView(visionBaseEdit)
-        visionCard.addView(label("密钥"))
+        visionCard.addView(label("授权密钥（API Key）"))
         visionCard.addView(edit(
             prefs.visionKey,
             "留空时，仅同服务商可继承回复/判断密钥",
@@ -380,21 +378,21 @@ class SettingsActivity : AppCompatActivity() {
         // =================== 分析 ===================
         root.addView(section("分析"))
         val card2 = card()
-        card2.addView(label("默认关系（可留空，联系人关系优先）"))
+        card2.addView(label("默认聊天关系（可留空）"))
         val relEdit = edit(prefs.relationship, "例如：同事、客户、家人；联系人可单独设置")
         card2.addView(relEdit)
         card2.addView(text(
-            "主动分析时，如当前应用的标准控件可读，会把会话标题/备注名作为身份线索；微信安全模式不会在后台持续读取。不会仅凭昵称猜关系，联系人档案里的关系优先于这里。",
+            "已保存联系人的关系优先。复制微信消息时，助手无法确认当前联系人，请核对聊天对象，不会仅凭昵称猜测关系。",
             11f, sub
         ))
-        card2.addView(label("会话白名单（每行一个关键词，空=所有会话）"))
+        card2.addView(label("允许分析的会话名称（每行一个，留空不限）"))
         val wlEdit = edit(prefs.whitelist.joinToString("\n"), "留空则对所有会话生效").apply {
             inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_MULTI_LINE; minLines = 2
         }
         card2.addView(wlEdit)
         val autoRow = toggleRow("其他适配应用收到消息时自动分析", prefs.autoAnalyze)
         card2.addView(autoRow)
-        card2.addView(text("默认关闭。微信始终采用主动模式：点悬浮球后才读取/分析当前内容。", 11f, sub))
+        card2.addView(text("默认关闭。微信通知的自动分析由下方独立开关控制。", 11f, sub))
 
         val wechatNotificationAutoRow = toggleRow(
             "微信通知到达即自动分析（可选）",
@@ -402,82 +400,81 @@ class SettingsActivity : AppCompatActivity() {
         )
         card2.addView(wechatNotificationAutoRow)
         card2.addView(text(
-            "默认关闭。开启后只使用 Android 通知标题、摘要和时间自动分析；仍不读取微信内部控件。关闭时则是“通知到达→悬浮球亮→点一下分析”。",
+            "默认关闭。开启后，通知中显示的消息会自动交给所选模型服务商分析，可能收费；不等于完整聊天记录。关闭后由你点击才分析。",
             11f, sub
         ))
 
         val wechatAutoCopyRow = toggleRow(
-            "极速：首选回复生成后自动复制",
+            "自动复制推荐回复",
             prefs.wechatAutoCopyTopReply
         )
         card2.addView(wechatAutoCopyRow)
         card2.addView(text(
-            "默认关闭。开启后只把模型最终排名第一的候选放进系统剪贴板并收起面板；不会写入微信输入框，也不会发送。与“通知到达即自动分析”同时开启时，打开微信后通常只需粘贴并发送。",
+            "默认关闭。开启后会将推荐回复复制到剪贴板，并收起面板；不会自动填入或发送。请粘贴后检查内容。",
             11f, sub
         ))
 
         // --- OCR 兜底 ---
         var ocrEngineSelected = prefs.ocrEngine
-        card2.addView(label("OCR 引擎"))
+        card2.addView(label("图片识字方式"))
         card2.addView(pills(
-            listOf("本地 ML Kit（默认）", "视觉 API（上传裁剪聊天区）"),
+            listOf("手机识别（默认）", "云端识别（上传所选图片区域）"),
             if (ocrEngineSelected == Prefs.OCR_VISION) 1 else 0
         ) { idx ->
             ocrEngineSelected = if (idx == 1) Prefs.OCR_VISION else Prefs.OCR_MLKIT
         })
         card2.addView(text(
-            "本地 ML Kit 完全在手机上运行，不需要图像 API Key，也不上传截图；视觉 API 是可选能力，只有你明确选择后才会上传裁剪后的聊天区域。微信不会强制截图识别。",
+            "手机识别无需额外密钥，不上传截图。云端识别会把所选图片区域发送给配置的服务商，可能收费。截图前请确认画面中没有不想提交的内容。",
             11f, sub
         ))
 
-        val ocrFallbackRow = toggleRow("其他适配应用控件不可读时自动 OCR", prefs.ocrFallback)
+        val ocrFallbackRow = toggleRow("其他应用无法读文字时改用截图识字", prefs.ocrFallback)
         card2.addView(ocrFallbackRow)
         card2.addView(text(
-            "默认关闭。微信安全模式不会自动触发 OCR；需要时由你在悬浮球里手动选择本地截屏识别。",
+            "默认关闭。微信不会自动截图；需要时可在悬浮球菜单中主动选择截图识字。",
             11f, sub
         ))
-        val ocrAutoRow = toggleRow("OCR 模式自动分析", prefs.ocrAutoAnalyze)
+        val ocrAutoRow = toggleRow("识别图片文字后自动分析", prefs.ocrAutoAnalyze)
         card2.addView(ocrAutoRow)
-        card2.addView(text("仅影响非微信的自动 OCR 路径；微信仍需用户主动触发。", 11f, sub))
+        card2.addView(text("仅用于其他应用的自动识字；微信截图仍由你主动发起。", 11f, sub))
 
         // --- 知识库 / 关联上下文（D 阶段） ---
-        val ctxRow = toggleRow("记录聊天历史（只存本机，用于关联上下文）", prefs.contextEnabled)
+        val ctxRow = toggleRow("保存长期聊天记录（仅本机）", prefs.contextEnabled)
         card2.addView(ctxRow)
-        card2.addView(text("关闭时不写任何聊天内容到磁盘；笔记与联系人匹配仍然照常工作。", 11f, sub))
+        card2.addView(text("关闭后不保存新的聊天记录；已有记录、联系人和备注不会自动删除。临时补充对话仍可使用。", 11f, sub))
         val autoSummaryRow = toggleRow(
-            "自动更新联系人摘要（会调用回复模型）",
+            "自动整理联系人摘要（可能收费）",
             prefs.autoSummary
         )
         card2.addView(autoSummaryRow)
         card2.addView(text(
-            "默认关闭。仅对已保存联系人、且已开启历史记录时生效；首次累计约 24 条后摘要，" +
-                "之后每新增约 20 条才更新。摘要会把已记录聊天发送到你选择的回复模型。",
+            "默认关闭。需先保存联系人并开启长期记录；积累一定消息后，将相关记录发送给回复服务商整理摘要，可能收费。",
             11f, sub
         ))
-        card2.addView(label("注入最近历史条数（0–100）"))
+        card2.addView(label("每次参考多少条已保存记录（0–100）"))
         val ctxCountEdit = edit(prefs.contextHistoryCount.toString(), "30").apply {
             inputType = InputType.TYPE_CLASS_NUMBER
         }
         card2.addView(ctxCountEdit)
-        card2.addView(cardBtn("知识库与联系人") {
+        card2.addView(cardBtn("联系人与备注") {
             startActivity(android.content.Intent(this, KnowledgeActivity::class.java))
         })
         val kbResult = resultText()
-        card2.addView(cardBtn("清空知识库与历史") {
+        card2.addView(cardBtn("清空联系人、备注和记录") {
             val c = KbStore.get(this).counts()
             androidx.appcompat.app.AlertDialog.Builder(this)
-                .setTitle("清空知识库与历史")
+                .setTitle("清空联系人、备注和记录")
                 .setMessage("将删除 ${c.notes} 条笔记、${c.contacts} 个联系人、${c.logLines} 条聊天历史。" +
-                    "密钥、白名单等设置不受影响。不可恢复。")
+                    "模型密钥和允许分析的会话设置不受影响。删除后无法恢复。")
                 .setPositiveButton("清空") { _, _ ->
                     KbStore.get(this).clearAll()
-                    kbResult.text = "已清空知识库与历史"
+                    kbResult.text = "联系人、备注和记录已清空"
                 }
                 .setNegativeButton("取消", null)
                 .show()
         })
         // Deliberately low-key: a developer aid, not a user feature.
-        card2.addView(text("自检", 12f, sub).apply {
+        card2.addView(text("功能自检", 12f, sub).apply {
             setPadding(dp(2), dp(12), dp(8), dp(2))
             setOnClickListener {
                 kbResult.text = "自检中…"
@@ -499,7 +496,7 @@ class SettingsActivity : AppCompatActivity() {
             }
         })
         card2.addView(kbResult)
-        card2.addView(cardBtn("捕获诊断") {
+        card2.addView(cardBtn("问题诊断") {
             startActivity(android.content.Intent(this, DiagnosticsActivity::class.java))
         })
         root.addView(card2)
@@ -524,33 +521,34 @@ class SettingsActivity : AppCompatActivity() {
         root.addView(card3)
 
         // =================== 电脑会话桥（显式授权） ===================
-        root.addView(section("电脑聊天上下文 · 测试版"))
+        val showLegacyDesktopSettings = prefs.desktopBridgeEnabled ||
+            prefs.desktopBridgeEndpoint.isNotBlank() || prefs.desktopBridgeAccountRef.isNotBlank()
+        if (showLegacyDesktopSettings) root.addView(section("已有电脑连接"))
         val desktopCard = card()
-        desktopCard.addView(cardTitle("跨设备消息同步"))
+        desktopCard.addView(cardTitle("管理已有电脑连接"))
         desktopCard.addView(text(
-            "只有开启后才连接你配置的电脑消息桥。Android 不读取微信聊天窗口、截图或内部数据库。"+
-                "默认关闭；桌面仅同步你明确允许的会话。",
+            "手机可独立使用。此入口仅用于管理你之前配置的电脑连接；关闭后不再同步电脑消息。",
             12f, sub
         ))
-        val desktopBridgeUrlEdit = edit(prefs.desktopBridgeEndpoint, "https://你的可信地址 或 USB 调试 http://127.0.0.1:8766")
-        val desktopAccountEdit = edit(prefs.desktopBridgeAccountRef, "电脑账号标识（需与消息桥一致）")
-        val desktopTokenEdit = edit(prefs.desktopBridgeToken, "至少 32 位的配对 Token", password = true)
-        desktopCard.addView(label("消息桥地址（HTTPS / USB loopback）"))
+        val desktopBridgeUrlEdit = edit(prefs.desktopBridgeEndpoint, "已配对电脑提供的连接地址")
+        val desktopAccountEdit = edit(prefs.desktopBridgeAccountRef, "填写之前配对时使用的账号标识")
+        val desktopTokenEdit = edit(prefs.desktopBridgeToken, "配对密钥（至少 32 位）", password = true)
+        desktopCard.addView(label("电脑连接地址"))
         desktopCard.addView(desktopBridgeUrlEdit)
-        desktopCard.addView(label("桌面账号标识"))
+        desktopCard.addView(label("电脑账号标识"))
         desktopCard.addView(desktopAccountEdit)
-        desktopCard.addView(label("配对 Token（仅保存在本机加密存储）"))
+        desktopCard.addView(label("配对密钥（本机加密保存）"))
         desktopCard.addView(desktopTokenEdit)
-        val desktopBridgeEnabledRow = toggleRow("允许本机接收电脑会话上下文", prefs.desktopBridgeEnabled)
+        val desktopBridgeEnabledRow = toggleRow("接收已配对电脑的消息", prefs.desktopBridgeEnabled)
         desktopCard.addView(desktopBridgeEnabledRow)
-        val desktopAutoAnalyzeRow = toggleRow("新消息自动生成候选（会调用配置的 AI 服务）", prefs.desktopAutoAnalyze)
+        val desktopAutoAnalyzeRow = toggleRow("自动生成回复（可能收费）", prefs.desktopAutoAnalyze)
         desktopCard.addView(desktopAutoAnalyzeRow)
         desktopCard.addView(text(
             "自动分析将把对应会话的文本交给当前配置的模型服务，可能产生费用。"+
-                "两个开关独立授权；生成结果只供你选择，不会自动发送微信消息。",
+                "接收消息与自动分析分别控制；回复仍由你确认并发送。",
             11f, sub
         ))
-        root.addView(desktopCard)
+        if (showLegacyDesktopSettings) root.addView(desktopCard)
 
         // =================== 保存 ===================
         root.addView(primaryBtn("保存全部设置") {
@@ -559,11 +557,11 @@ class SettingsActivity : AppCompatActivity() {
             val desktopAccount = desktopAccountEdit.text.toString().trim()
             val desktopToken = desktopTokenEdit.text.toString().trim()
             if (desktopRequested && !DesktopBridgeClient.isEndpointAllowed(desktopUrl)) {
-                Toast.makeText(this, "电脑消息桥仅允许 HTTPS 或本机 USB 调试地址", Toast.LENGTH_LONG).show()
+                Toast.makeText(this, "请检查电脑连接地址，需使用加密连接或本机调试连接", Toast.LENGTH_LONG).show()
                 return@primaryBtn
             }
             if (desktopRequested && (desktopAccount.isBlank() || desktopToken.length < 32)) {
-                Toast.makeText(this, "请填写账号标识与至少 32 位的配对 Token", Toast.LENGTH_LONG).show()
+                Toast.makeText(this, "请填写电脑账号标识和至少 32 位的配对密钥", Toast.LENGTH_LONG).show()
                 return@primaryBtn
             }
 
@@ -624,7 +622,7 @@ class SettingsActivity : AppCompatActivity() {
                 prefs.ocrEngine == Prefs.OCR_VISION &&
                 prefs.effectiveVisionKey().isBlank()
             ) {
-                "已保存；视觉 OCR 未配置可用密钥，将自动回退本地识别"
+                "已保存；云端识字尚未配置密钥，当前使用手机识别"
             } else {
                 "已保存"
             }

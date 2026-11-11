@@ -36,15 +36,15 @@ class ManualContextActivity : AppCompatActivity() {
         }
         setContentView(scroll)
 
-        container.addView(message("最近 20 条 · 本次对话", 23f, true))
+        container.addView(message("补充最近对话", 23f, true))
         container.addView(message(
-            "手动粘贴按时间先后排列的对话，每行以“我：”或“对方：”开头。最多使用最后 20 条。" +
-                "最后一条须为对方消息，与你之后在微信主动复制的文字完全一致。",
+            "粘贴同一个人的聊天内容，按先后顺序，每行一条，以“我：”或“对方：”开头。最多使用最近 20 条。" +
+                "最后一条应是对方消息。之后回到微信，复制这一条的正文，再点悬浮球分析。",
             14f
         ))
         container.addView(message(
-            "JEV 不读取微信聊天列表、不识别联系人。仅当你随后复制的最新消息与末条文字相同时，" +
-                "本次分析才会使用导入内容；如果聊天对象变了，请先清除或重新导入。",
+            "助手不会自动读取微信历史或确认聊天对象。复制的消息与这里最后一条相同时，" +
+                "才会参考这些内容。切换聊天对象后，请先清除或重新导入，避免混用。",
             12f
         ))
         val draft = EditText(this).apply {
@@ -62,14 +62,14 @@ class ManualContextActivity : AppCompatActivity() {
         }
         container.addView(draft)
         val mimic = CheckBox(this).apply {
-            text = "同时参考我自己发过的消息语气（需要至少 3 条明确标注为“我”的文字）"
+            text = "参考我的说话方式（至少 3 条本人消息）"
             isChecked = false
             setTextColor(Guofeng.INK)
         }
         container.addView(mimic)
         container.addView(message(
-            "只从你明确标注的真实本人消息提取措辞、字数和语气。" +
-                "AI 生成的候选不能充当学习样本；此功能不调用额外训练接口。",
+            "只参考标注为“我”的真实发言；填写了回复风格时，以你的设置为主。" +
+                "请不要把 AI 建议的回复当作自己已发过的消息。",
             12f
         ))
 
@@ -77,14 +77,14 @@ class ManualContextActivity : AppCompatActivity() {
         fun showStatus(prefix: String = "") {
             val s = ManualConversationContext.status(System.currentTimeMillis())
             status.text = if (!s.active) {
-                prefix + "本次尚无导入上下文"
+                prefix + "还没有补充对话"
             } else {
-                prefix + "已暂存 ${s.messages} 条；风格样本 ${s.styleSamples} 条。" +
-                    " 仅保留在内存中，60 分钟后失效。"
+                prefix + "已添加 ${s.messages} 条对话；参考本人消息 ${s.styleSamples} 条。" +
+                    " 60 分钟后自动失效，应用被系统关闭后也会失效。"
             }
         }
         container.addView(Button(this).apply {
-            text = "确认使用本次对话（仅当前运行）"
+            text = "添加到本次分析"
             isAllCaps = false
             setOnClickListener {
                 try {
@@ -93,16 +93,16 @@ class ManualContextActivity : AppCompatActivity() {
                     )
                     draft.setText("")
                     val hint = if (mimic.isChecked && info.styleSamples == 0) {
-                        "本人样本不足，已仅启用对话上下文。"
+                        "本人消息不足 3 条，本次只参考聊天内容。"
                     } else ""
-                    showStatus("导入成功。${hint}\n")
+                    showStatus("已添加。${hint}\n")
                 } catch (e: IllegalArgumentException) {
                     status.text = e.message ?: "对话格式不正确"
                 }
             }
         })
         container.addView(Button(this).apply {
-            text = "清除本次对话与风格样本"
+            text = "清除本次对话"
             isAllCaps = false
             setOnClickListener {
                 ManualConversationContext.clear()
@@ -112,9 +112,9 @@ class ManualContextActivity : AppCompatActivity() {
         })
         container.addView(status)
         container.addView(message(
-            "导入只保存在 JEV 进程内存中，关闭应用进程后失效；" +
-                "主动发起分析时，相关最近对话及样本会发送给你配置的判断/回复模型服务商。" +
-                "没有额外权限，也不会自动发送微信消息。",
+            "这些对话仅临时保留，不会保存为长期聊天记录。" +
+                "点击分析时，对话与参考样本会交给所选模型服务商，可能收费。" +
+                "回复由你确认后发送。",
             12f
         ))
         showStatus()

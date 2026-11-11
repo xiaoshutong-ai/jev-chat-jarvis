@@ -342,7 +342,7 @@ class OverlayController(private val ctx: Context) {
             layoutParams = FrameLayout.LayoutParams(dp(196), ViewGroup.LayoutParams.WRAP_CONTENT).apply { topMargin = dp(56) }
         }
         onAnalyzeClipboard?.let {
-            menu.addView(menuItem("分析剪贴板") { root?.removeView(menu); it.invoke() })
+            menu.addView(menuItem("分析已复制的消息") { root?.removeView(menu); it.invoke() })
         }
         onOcrCapture?.let {
             menu.addView(menuItem("本地截屏识别（可选）") { root?.removeView(menu); it.invoke() })
@@ -413,7 +413,7 @@ class OverlayController(private val ctx: Context) {
         title?.takeIf { it.isNotBlank() }?.let {
             views.add(hint("会话：" + it.take(24)))
         }
-        views.add(hint("点悬浮球即可分析；不读取微信内部控件"))
+        views.add(hint("这是通知中的消息摘要，点悬浮球查看建议"))
         setContent(views)
     }
 
@@ -456,12 +456,12 @@ class OverlayController(private val ctx: Context) {
         ensureRoot()
         val previous = lastJudgment
         val views = ArrayList<View>()
-        views.add(line("主动分析", "#5C6560", 12f, true))
+        views.add(line("选择要分析的消息", "#5C6560", 12f, true))
         onAnalyzeClipboard?.let { action ->
             views.add(bigButton("分析刚复制的消息") { action.invoke() })
         }
         onOcrCapture?.let { action ->
-            views.add(secondaryButton("本地截屏识别（可选，无需图像 Key）") { action.invoke() })
+            views.add(secondaryButton("截图识字（可选）") { action.invoke() })
         }
         if (previous != null) {
             views.add(secondaryButton("查看上次分析结果") {
@@ -490,7 +490,7 @@ class OverlayController(private val ctx: Context) {
             views.add(bigButton("分析刚复制的消息") { action.invoke() })
         }
         onOcrCapture?.let { action ->
-            views.add(secondaryButton("本地截屏识别（无需图像 Key）") { action.invoke() })
+            views.add(secondaryButton("截图识字") { action.invoke() })
         }
         setContent(views)
     }
@@ -505,12 +505,12 @@ class OverlayController(private val ctx: Context) {
         clipboardOneTapMode = true
         bubble?.alpha = 0.75f
         val views = ArrayList<View>()
-        views.add(line("微信安全模式 · 不读取内部控件", "#5C6560", 12f, true))
+        views.add(line("先复制一条消息，再点下方分析", "#5C6560", 12f, true))
         onAnalyzeClipboard?.let { action ->
             views.add(bigButton("分析刚复制的消息") { action.invoke() })
         }
         onOcrCapture?.let { action ->
-            views.add(secondaryButton("本地截屏识别（可选，无需图像 Key）") { action.invoke() })
+            views.add(secondaryButton("截图识字（可选）") { action.invoke() })
         }
         setContent(views)
     }
@@ -680,9 +680,9 @@ class OverlayController(private val ctx: Context) {
         val views = ArrayList<View>()
 
         // What context this read was based on (knowledge base / remembered history).
-        views.add(hint(
-            if (ctxNotes == 0 && ctxHistory == 0) "未用知识库"
-            else "知识库 $ctxNotes 条 · 历史 $ctxHistory 条"))
+        if (ctxNotes > 0 || ctxHistory > 0) {
+            views.add(hint("参考了 $ctxNotes 条备注、$ctxHistory 条已保存记录"))
+        }
 
         // How this snapshot was captured, when it changes how to read it.
         noteText?.let { if (it.isNotBlank()) views.add(hint(it)) }
@@ -690,29 +690,28 @@ class OverlayController(private val ctx: Context) {
         // Danger badge — the alarm signal, up top and color-coded.
         a.dangerLevel?.let {
             val lvl = it.score.roundToInt()
-            views.add(dangerBadge(lvl, it.maxLevel))
+            views.add(dangerBadge(lvl))
             tintBubbleDanger(it.score)
         }
         // Intent headline.
         a.trueIntent?.let {
-            views.add(line("对方真实意图：${INTENT[it.choice] ?: it.choice}", "#184940", 15f, true))
-            views.add(hint("把握 ${(it.confidence * 100).roundToInt()}%"))
+            views.add(line("对方可能的意思：${INTENT[it.choice] ?: "暂不明确"}", "#184940", 15f, true))
         }
         // Compact secondary line: needs · action · reply-now.
         val bits = ArrayList<String>()
         a.sheNeeds?.let { bits.add("要${(NEEDS[it.choice] ?: it.choice)}") }
         a.bestAction?.let { bits.add(ACTION[it.choice] ?: it.choice) }
-        a.shouldReplyNow?.let { bits.add(if (it >= 0.5) "可给实质" else "先别给实质") }
+        a.shouldReplyNow?.let { bits.add(if (it >= 0.5) "可以具体回应" else "先核对再回应") }
         if (bits.isNotEmpty()) views.add(line(bits.joinToString("  ·  "), "#5C6560", 13f))
-        a.tensionResolved?.let { if (it >= 0.7) views.add(line("✓ 紧张已缓解", "#2E7858", 12f)) }
+        a.tensionResolved?.let { if (it >= 0.7) views.add(line("对话似乎已缓和", "#2E7858", 12f)) }
 
         val rankingUnavailable = replyError != null && a.rankedReplies.isNotEmpty()
         views.add(divider())
         views.add(line(
             when {
-                replySorting -> "候选回复 · 正在智能排序"
-                rankingUnavailable -> "候选回复 · 排序暂不可用"
-                else -> "推荐回复 · 智能排序"
+                replySorting -> "回复建议 · 正在比较"
+                rankingUnavailable -> "回复建议"
+                else -> "回复建议 · 选一条再修改"
             },
             "#976F3E", 12f, true
         ))
@@ -739,14 +738,14 @@ class OverlayController(private val ctx: Context) {
         if (!expanded) toggle()
     }
 
-    private fun dangerBadge(lvl: Int, max: Int): View {
+    private fun dangerBadge(lvl: Int): View {
         val color = dangerColor(lvl)
         val row = LinearLayout(ctx).apply {
             orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL
             setPadding(0, 0, 0, dp(6))
         }
         row.addView(TextView(ctx).apply {
-            text = "危险 $lvl/$max"
+            text = "沟通提醒"
             setTextColor(Guofeng.CARD); textSize = 13f; typeface = Guofeng.sans(true)
             setPadding(dp(10), dp(4), dp(10), dp(4))
             background = card(20, color)
@@ -777,9 +776,9 @@ class OverlayController(private val ctx: Context) {
         }
         c.addView(TextView(ctx).apply {
             this.text = when {
-                pct == null -> "候选 #$rank"
-                top -> "推荐 · ${pct}%"
-                else -> "#$rank · ${pct}%"
+                pct == null -> "回复 $rank"
+                top -> "推荐"
+                else -> "备选 $rank"
             }
             setTextColor(if (top) Guofeng.JADE_DEEP else Guofeng.GOLD); textSize = 11f
             typeface = Guofeng.sans(true)
@@ -836,7 +835,7 @@ class OverlayController(private val ctx: Context) {
     }
 
     private fun reAnalyzeBtn() = TextView(ctx).apply {
-        text = "重新分析（会产生费用）"; textSize = 13f; gravity = Gravity.CENTER
+        text = "重新生成（可能收费）"; textSize = 13f; gravity = Gravity.CENTER
         setTextColor(Guofeng.INK_SOFT)
         setPadding(dp(10), dp(10), dp(10), dp(4))
         setOnClickListener { onManualAnalyze?.invoke() }
@@ -880,10 +879,10 @@ class OverlayController(private val ctx: Context) {
     }
 
     private fun dangerWord(lvl: Int): String = when {
-        lvl >= 8 -> "很危险"
-        lvl >= 6 -> "偏危险"
-        lvl >= 3 -> "留神"
-        else -> "安全"
+        lvl >= 8 -> "语气很紧张"
+        lvl >= 6 -> "可能有分歧"
+        lvl >= 3 -> "留意表达方式"
+        else -> "语气较平和"
     }
 
     companion object {
