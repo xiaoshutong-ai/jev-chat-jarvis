@@ -80,3 +80,16 @@
 将新 APK 作为**文件传输**到 Note9 下载目录 `/sdcard/Download/JEV_Note9_ClipboardFix_dce504e_9D995DF0.apk`，手机本地 SHA-256 已独立回读一致。**截至本回执，新包尚未通过手机系统安装确认，Note9 仍运行旧包；DEVICE_FIX_E2E=NOT_RUN。** 需本人用 MIUI 文件管理器打开该 APK，在原应用上同签名更新，且保留系统提示的必要同意。前次 `INSTALL_FAILED_USER_RESTRICTED` 不使用 ADB 绕过。
 
 待安装后仅用 `JEV_NOTE9_TEST_01` 合成测试文本核对 AppOps、`clipboard_state=...` 无正文日志、错误面板可见和微信前台悬浮窗；不调用付费模型、不向微信发送、不更改搜狗输入法或 vivo。PR #21 仍 Draft，CI、真实候选及填入验收未宣称通过。
+
+## 2026-11-11 10:14 后修复版实际安装与悬浮球复验
+
+用户回复“Note9 已更新”；5070TI-JAY 的 Remote Desktop Commander 已在本人授权 ADB 设备 `8txwr49pz9tsr4ei` 实时回读并核实：
+
+- JEV `com.jev.probe.guofeng` `1.3-guofeng-debug` 新版 APK 的**实际已安装二进制** SHA-256 恰为 `9D995DF007CFDD27C3085ADA26F2E1A97E6BEFECECAC471E6F354EB053AB0668`，与修复版包完全一致；MIUI `com.miui.packageinstaller` 记录 `lastUpdateTime=2026-11-11 10:09:33`，原安装 `firstInstallTime=2026-11-11 09:23:55`。**更新安装 PASS**，不再是只有文件传输。
+- 手机在 JEV 的 `SettingsActivity` 时 AppOps `SYSTEM_ALERT_WINDOW: allow`，`READ_CLIPBOARD: foreground`；`KeepAliveService` 正常运行，默认输入法仍为 `com.sohu.inputmethod.sogou.xiaomi/.SogouIME`。
+- 利用 Debug 包自身 `run-as` 只在设备内解析应用偏好，**仅返回非空布尔值**，不泄露内容或账号：`judge_key NONEMPTY=False`、`judge_key_enc_v1 NONEMPTY=False`、助手启用设置 `DEFAULT_TRUE`。因此 Note9 当前无法调用真实候选生成，缺 Key 后应出现可见面板提示。
+- 使用系统 ActivityManager 将既有微信 `com.tencent.mm/.ui.LauncherUI` 返回前台，仅核对 UI 系统元数据：`WINDOW_FOUND=True`、`WINDOW_IS_APPLICATION_OVERLAY=True`、`WINDOW_HAS_SURFACE=True`、`WINDOW_IS_VISIBLE=True`、`JEV_KEEPALIVE_RUNNING=True`、`IME_UNCHANGED=True`，没有阅读任何实际聊天记录。
+- 在首次读取新版日志时尚无 `clipboard_state=...` 匹配记录；这是 **CLIPBOARD_STATUS_E2E=NOT_RUN**，不能以权限、安装、前台显示 PASS 推断“黑框闪现”缺陷已真正消失。下一步仅需用户在 Note9 测试微信的文件传输助手里主动复制无敏感测试文字 `JEV_NOTE9_TEST_01` 后轻点悬浮球一次；执行者只回读 `clipboard_state=` 枚举（不回读原文）、窗口可见性以及异常类型。预期 `TEXT_HANDOFF`、`MODEL_KEY_MISSING`，界面应清楚显示缺少模型密钥。
+- 源码功能修复 HEAD `dce504ea6a2a6cc8e6b373d662bd41beba4555e7`；此后仅文档变更，PR #21 仍 Draft；CI / 微信实际候选填入 / 发布继续 NOT_RUN。
+
+本回执不扩大访问范围、不自动发送微信、不安装其他设备、不调用模型。
