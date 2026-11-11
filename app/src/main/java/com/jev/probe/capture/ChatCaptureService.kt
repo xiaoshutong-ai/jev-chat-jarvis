@@ -619,9 +619,9 @@ open class ChatCaptureService : AccessibilityService() {
     /**
      * Explicit one-shot standard-node read initiated by the user.
      *
-     * Normal-user WeChat A gets a generic visible-text reader with no WeChat
-     * resource ids and no event subscription. Clone-profile WeChat B remains
-     * outside Accessibility and uses notification / clipboard / optional OCR.
+     * Only adapted QQ/X/Feishu chats may be read through their standard nodes.
+     * Both normal and clone-profile WeChat remain outside accessibility-based
+     * message reading and use notification / explicit clipboard / optional OCR.
      * Failure never falls through to screenshot automatically.
      */
     private fun manualAnalyzeCurrentWindow() {
@@ -715,32 +715,19 @@ open class ChatCaptureService : AccessibilityService() {
     }
 
     /**
-     * Root used only for an explicit user-triggered one-shot read.
-     *
-     * Some OEM / Android 16 combinations return null from rootInActiveWindow
-     * when the service does not subscribe to the foreground package's events,
-     * even though the active accessibility window itself can still expose a
-     * standard root. Fall back to AccessibilityService.windows without changing
-     * packageNames or subscribing to WeChat events.
+     * Explicit one-shot read only for the active, already-adapted chat app.
+     * Never enumerate WeChat roots or fall back to an unadapted window.
      */
     private fun manualReadRoot(): AccessibilityNodeInfo? {
-        rootInActiveWindow?.let { return it }
-
-        val candidates = runCatching { windows }.getOrNull().orEmpty()
-        val activeRoots = candidates.asSequence()
+        val expectedPackage = (activePkg ?: foregroundPkg)
+            ?.takeIf { it in adapters } ?: return null
+        rootInActiveWindow?.let { root ->
+            return root.takeIf { it.packageName?.toString() == expectedPackage }
+        }
+        return runCatching { windows }.getOrNull().orEmpty().asSequence()
             .filter { it.isActive || it.isFocused }
             .mapNotNull { window -> runCatching { window.root }.getOrNull() }
-            .toList()
-
-        activeRoots.firstOrNull {
-            it.packageName?.toString() == WECHAT_PKG
-        }?.let { return it }
-
-        activeRoots.firstOrNull()?.let { return it }
-
-        return candidates.asSequence()
-            .mapNotNull { window -> runCatching { window.root }.getOrNull() }
-            .firstOrNull { it.packageName?.toString() == WECHAT_PKG }
+            .firstOrNull { it.packageName?.toString() == expectedPackage }
     }
 
     // ------------------------------------------------------------------ OCR

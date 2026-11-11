@@ -133,21 +133,10 @@ class ZhiyanInputMethodService : InputMethodService() {
     override fun onStartInputView(info: EditorInfo?, restarting: Boolean) {
         super.onStartInputView(info, restarting)
         refreshEditorIdentity(info)
-        val armed = if (focusedWechatEditor == null) {
-            ReplyHandoff.consumeArmed()
-        } else {
-            // MIUI can recreate the keyboard repeatedly during a system picker
-            // transition. Only a successful, explicit candidate tap consumes it.
-            ReplyHandoff.peekArmed()
-        }
-        if (focusedWechatEditor == null && !armed.isNullOrBlank()) {
-            // Existing one-shot behavior is unchanged outside WeChat.
-            commitCandidate(armed)
-            return
-        }
-        // For WeChat, an armed reply is NOT proof of the active contact.
-        // The user must tap the visible, labelled candidate before insertion.
-        pendingExplicitReply = armed
+        // Never insert into an editor merely because Android selected this IME.
+        // MIUI may recreate its view during a picker transition. The candidate
+        // survives until the user explicitly taps it and commitText succeeds.
+        pendingExplicitReply = ReplyHandoff.peekArmed()
         renderCandidates()
     }
 
@@ -170,14 +159,34 @@ class ZhiyanInputMethodService : InputMethodService() {
         box.removeAllViews()
         val focus = focusedWechatEditor
         if (focus == null) {
-            val replies = ReplyHandoff.current()
-            if (replies.isEmpty()) {
+            val expectedEpoch = editorEpoch
+            val expectedPackage = currentInputEditorInfo?.packageName
+            // Non-WeChat editors do not have a contact binding. Show candidates
+            // for an explicit tap, and recheck the editor identity at tap time.
+            fun insertOnTap(text: String) {
+                if (expectedPackage.isNullOrBlank() ||
+                    editorEpoch != expectedEpoch ||
+                    currentInputEditorInfo?.packageName != expectedPackage ||
+                    focusedWechatEditor != null
+                ) {
+                    toastLocal("输入框已切换，请重新确认回复")
+                    return
+                }
+                commitCandidate(text)
+            }
+            box.addView(infoText("请确认当前输入框，点选回复后只填入文字，不会自动发送。"))
+            val selected = pendingExplicitReply
+            if (!selected.isNullOrBlank()) {
+                box.addView(infoText("你选中的回复"))
+                box.addView(replyButton(selected, true) { insertOnTap(selected) })
+            }
+            val replies = ReplyHandoff.current().filter { it.text != selected }.take(3)
+            if (replies.isEmpty() && selected.isNullOrBlank()) {
                 box.addView(infoText("暂无候选回复。先在小书童悬浮窗完成一次分析。"))
-                return
             }
             replies.forEachIndexed { index, reply ->
                 box.addView(replyButton((index + 1).toString() + ". " + reply.text, index == 0) {
-                    commitCandidate(reply.text)
+                    insertOnTap(reply.text)
                 })
             }
             return

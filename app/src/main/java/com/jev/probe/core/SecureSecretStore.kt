@@ -35,11 +35,18 @@ internal class SecureSecretStore(
             try {
                 val value = decrypt(encrypted)
                 // A prior phase-2 cleanup may have failed; retry opportunistically.
-                if (prefs.contains(legacyPlainPref))
-                    prefs.edit().remove(legacyPlainPref).commit()
+                if (prefs.contains(legacyPlainPref) &&
+                    !prefs.edit().remove(legacyPlainPref).commit()
+                ) {
+                    Log.w(TAG, "legacy plaintext cleanup failed")
+                    return ""
+                }
                 return value
             } catch (e: Exception) {
+                // Never overwrite an existing but temporarily unreadable
+                // ciphertext with a stale legacy plaintext credential.
                 Log.w(TAG, "secret decrypt failed: ${e.javaClass.simpleName}")
+                return ""
             }
         }
 
@@ -47,49 +54,57 @@ internal class SecureSecretStore(
         if (legacy.isBlank()) return ""
 
         return try {
-            val encoded = encrypt(legacy)
-            check(decrypt(encoded) == legacy) { "secret round-trip mismatch" }
-            // Phase 1: persist verified ciphertext while plaintext still
-            // exists. Only after this succeeds may phase 2 remove plaintext.
-            val encryptedCommitted = prefs.edit()
-                .putString(encryptedPref, encoded)
-                .commit()
-            if (encryptedCommitted) {
-                prefs.edit().remove(legacyPlainPref).commit()
-                Log.i(TAG, "secret migrated to AndroidKeyStore")
-            }
+            SecretWritePolicy.persist(
+                plain = legacy,
+                encode = ::encrypt,
+                decode = ::decrypt,
+                commitEncrypted = { cipher ->
+                    prefs.edit().putString(encryptedPref, cipher).commit()
+                },
+                removeLegacy = { prefs.edit().remove(legacyPlainPref).commit() }
+            )
+            Log.i(TAG, "secret migrated to AndroidKeyStore")
             legacy
         } catch (e: Exception) {
+            // Keep existing data for a future retry, but never use a key that
+            // could not be securely migrated during this request.
             Log.w(TAG, "secret migration deferred: ${e.javaClass.simpleName}")
-            legacy
+            ""
         }
     }
 
     fun write(encryptedPref: String, legacyPlainPref: String, value: String) {
         if (value.isBlank()) {
-            prefs.edit().remove(encryptedPref).remove(legacyPlainPref).apply()
+            try {
+                SecretWritePolicy.clearIfReadable(
+                    encrypted = prefs.getString(encryptedPref, null),
+                    decode = ::decrypt,
+                    removeAll = {
+                        prefs.edit().remove(encryptedPref).remove(legacyPlainPref).commit()
+                    }
+                )
+            } catch (e: Exception) {
+                Log.w(TAG, "secure secret clear rejected: ${e.javaClass.simpleName}")
+                throw IllegalStateException("安全存储暂不可读取或清除，原密钥已保留", e)
+            }
             return
         }
 
         try {
-            val encoded = encrypt(value)
-            check(decrypt(encoded) == value) { "secret round-trip mismatch" }
-            val encryptedCommitted = prefs.edit()
-                .putString(encryptedPref, encoded)
-                .commit()
-            if (encryptedCommitted) {
-                // Failure here only leaves both copies; the next read prefers
-                // verified ciphertext and can retry cleanup later.
-                prefs.edit().remove(legacyPlainPref).commit()
-            } else {
-                prefs.edit().putString(legacyPlainPref, value).apply()
-            }
+            SecretWritePolicy.persist(
+                plain = value,
+                encode = ::encrypt,
+                decode = ::decrypt,
+                commitEncrypted = { cipher ->
+                    prefs.edit().putString(encryptedPref, cipher).commit()
+                },
+                removeLegacy = { prefs.edit().remove(legacyPlainPref).commit() }
+            )
         } catch (e: Exception) {
-            Log.w(TAG, "secure secret write degraded: ${e.javaClass.simpleName}")
-            prefs.edit()
-                .remove(encryptedPref)
-                .putString(legacyPlainPref, value)
-                .apply()
+            // Never overwrite a previously encrypted credential or persist a
+            // newly supplied credential in plaintext when Keystore fails.
+            Log.w(TAG, "secure secret write rejected: ${e.javaClass.simpleName}")
+            throw IllegalStateException("安全存储未完成，请重试", e)
         }
     }
 

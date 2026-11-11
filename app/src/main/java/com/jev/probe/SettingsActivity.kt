@@ -571,6 +571,21 @@ class SettingsActivity : AppCompatActivity() {
             val judgeBaseTyped = judgeBaseEdit.text.toString().trim()
             val judgeProv = resolveJudgeProvider(judgeProviderIdx, judgeBaseTyped)
             val judgeModelTyped = judgeModelEdit.text.toString().trim()
+            // Persist credentials first. A Keystore failure must not leave new
+            // provider/endpoint settings paired with an old key.
+            try {
+                prefs.judgeKey = judgeKeyEdit.text.toString()
+                prefs.replyKey = replyKeyEdit.text.toString()
+                prefs.visionKey = visionKeyEdit.text.toString()
+                prefs.desktopBridgeToken = desktopToken
+            } catch (e: Exception) {
+                Toast.makeText(
+                    this,
+                    "密钥未全部安全保存，其他设置未更新。请检查手机安全存储后重试。",
+                    Toast.LENGTH_LONG
+                ).show()
+                return@primaryBtn
+            }
             prefs.judgeProvider = judgeProv
             // Blank falls back to THIS provider's preset — never OpenRouter's by
             // default. Custom is left exactly as typed (blank included): guessing
@@ -580,7 +595,6 @@ class SettingsActivity : AppCompatActivity() {
                 judgeProv == Prefs.PROVIDER_CUSTOM -> ""
                 else -> defaultJudgeBase(judgeProv)
             }
-            prefs.judgeKey = judgeKeyEdit.text.toString()
             prefs.judgeModel = when {
                 judgeModelTyped.isNotBlank() -> judgeModelTyped
                 judgeProv == Prefs.PROVIDER_CUSTOM -> ""
@@ -588,12 +602,10 @@ class SettingsActivity : AppCompatActivity() {
             }
 
             prefs.replyBaseUrl = replyBaseEdit.text.toString().trim().ifBlank { Prefs.DEFAULT_REPLY_BASE }
-            prefs.replyKey = replyKeyEdit.text.toString()
             prefs.replyModel = replyModelEdit.text.toString().trim().ifBlank { Prefs.DEFAULT_REPLY_MODEL }
             prefs.replyStylePrompt = stylePromptEdit.text.toString()
 
             prefs.visionBaseUrl = visionBaseEdit.text.toString().trim()
-            prefs.visionKey = visionKeyEdit.text.toString()
             prefs.visionModel = visionModelEdit.text.toString().trim().ifBlank { Prefs.DEFAULT_VISION_MODEL }
 
             prefs.relationship = relEdit.text.toString()   // blank stays blank, on purpose
@@ -614,7 +626,6 @@ class SettingsActivity : AppCompatActivity() {
             prefs.overlayOpacity = seek.progress + 60
             prefs.desktopBridgeEndpoint = desktopUrl
             prefs.desktopBridgeAccountRef = desktopAccount
-            prefs.desktopBridgeToken = desktopToken
             prefs.desktopAutoAnalyze = desktopRequested &&
                 ((desktopAutoAnalyzeRow.tag as? Boolean) ?: false)
             prefs.desktopBridgeEnabled = desktopRequested

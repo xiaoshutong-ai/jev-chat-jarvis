@@ -17,8 +17,9 @@ import java.net.URI
 class Prefs(context: Context, prefsName: String = PREFS_MAIN) {
 
     private val sp = context.getSharedPreferences(prefsName, Context.MODE_PRIVATE)
-    private val secureSecrets =
-        if (prefsName == PREFS_MAIN) SecureSecretStore(context, sp) else null
+    // Scratch connection probes also contain credentials while in use.
+    // Keep them encrypted, not only the persistent main preferences.
+    private val secureSecrets = SecureSecretStore(context, sp)
 
     /**
      * Only the real config migrates — and only the real config logs it. The
@@ -35,7 +36,9 @@ class Prefs(context: Context, prefsName: String = PREFS_MAIN) {
             visionKey
             // v1.2's original key had a different preference name. Once the
             // v1.3 judge slot is readable, the obsolete duplicate is unnecessary.
-            if (migratedJudge.isNotBlank()) sp.edit().remove(K_LEGACY_KEY).apply()
+            if (migratedJudge.isNotBlank() && !sp.edit().remove(K_LEGACY_KEY).commit()) {
+                Log.w(TAG, "legacy preference cleanup deferred")
+            }
         }
     }
 
@@ -47,14 +50,18 @@ class Prefs(context: Context, prefsName: String = PREFS_MAIN) {
         if (sp.getBoolean(K_MIGRATED_V13, false)) return   // runs exactly once
         val legacy = sp.getString(K_LEGACY_KEY, "") ?: ""
         val current = sp.getString(K_JUDGE_KEY, "") ?: ""
-        val e = sp.edit().putBoolean(K_MIGRATED_V13, true)
-        if (current.isBlank() && legacy.isNotBlank()) {
-            e.putString(K_JUDGE_KEY, legacy)
-            Log.i(TAG, "prefs migrated judgeKey.len=${legacy.length}")
-        } else {
-            Log.i(TAG, "prefs migrated judgeKey.len=${current.length} (no legacy key to copy)")
+        val alreadyEncrypted = !sp.getString(K_JUDGE_KEY_ENC, "").isNullOrBlank()
+        if (current.isBlank() && legacy.isNotBlank() && !alreadyEncrypted) {
+            try {
+                // Migrate directly to verified ciphertext; never create a new
+                // v1.3 plaintext copy of the legacy v1.2 key.
+                secureSecrets.write(K_JUDGE_KEY_ENC, K_JUDGE_KEY, legacy)
+            } catch (e: Exception) {
+                Log.w(TAG, "legacy key migration deferred: ${e.javaClass.simpleName}")
+                return
+            }
         }
-        e.apply()
+        sp.edit().putBoolean(K_MIGRATED_V13, true).apply()
     }
 
     /**
@@ -288,13 +295,10 @@ class Prefs(context: Context, prefsName: String = PREFS_MAIN) {
     // ------------------------------------------------------------- helpers
 
     private fun readSecret(plainKey: String, encryptedKey: String): String =
-        secureSecrets?.readOrMigrate(encryptedKey, plainKey)
-            ?: (sp.getString(plainKey, "") ?: "")
+        secureSecrets.readOrMigrate(encryptedKey, plainKey)
 
     private fun writeSecret(plainKey: String, encryptedKey: String, value: String) {
-        val secure = secureSecrets
-        if (secure != null) secure.write(encryptedKey, plainKey, value)
-        else sp.edit().putString(plainKey, value).apply()
+        secureSecrets.write(encryptedKey, plainKey, value)
     }
 
     /**
