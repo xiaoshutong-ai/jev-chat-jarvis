@@ -14,6 +14,7 @@ import com.jev.probe.ClipboardImportActivity
 import com.jev.probe.core.ChatSnapshot
 import com.jev.probe.core.ExplicitClipboardPolicy
 import com.jev.probe.core.ClipboardAnalysisCache
+import com.jev.probe.core.ManualConversationContext
 import com.jev.probe.core.Msg
 import com.jev.probe.core.Prefs
 import com.jev.probe.core.RankedReply
@@ -215,21 +216,26 @@ class KeepAliveService : Service() {
         val refreshRequestedFor = explicitRefreshFingerprint
         explicitRefreshFingerprint = null
         val now = System.currentTimeMillis()
-        val snapshot = ExplicitClipboardPolicy.fromUserCopy(raw, now)
-        if (snapshot == null) {
+        val selected = ExplicitClipboardPolicy.fromUserCopy(raw, now)
+        if (selected == null) {
             android.util.Log.i("JEVASSIST", "clipboard_state=INVALID_TEXT")
             overlay.showError("复制的文字不可分析，请重新复制一条测试消息",
                 allowClipboardRetry = true)
             return
         }
 
-        val text = snapshot.messages.single().text
+        val text = selected.messages.single().text
+        // An imported transcript is used only after a second deliberate copy
+        // exactly matches its latest incoming line. The title stays unverified.
+        val manuallyMatched = ManualConversationContext.matchCopiedIncoming(text, now)
+        val snapshot = manuallyMatched?.snapshot ?: selected
         val fingerprint = ExplicitClipboardPolicy.fingerprint(text)
         // Changed provider/model settings must not silently restore old results.
         // The cache key and all results live only in this service's memory.
         val cacheKey = listOf(
             fingerprint, prefs.judgeProvider, prefs.judgeBaseUrl, prefs.judgeModel,
-            prefs.replyBaseUrl, prefs.replyModel
+            prefs.replyBaseUrl, prefs.replyModel,
+            manuallyMatched?.revision?.toString() ?: "no-manual-context"
         ).joinToString("\u0000")
 
         // Only this explicitly labelled button can invalidate a completed result.
@@ -515,7 +521,7 @@ class KeepAliveService : Service() {
         private const val NOTIFICATION_ID = 1
         private const val WECHAT_PKG = "com.tencent.mm"
         private const val MAX_NOTIFICATION_HISTORY = 20
-        private const val MAX_ANALYSIS_MESSAGES = 12
+        private const val MAX_ANALYSIS_MESSAGES = 20
 
         private const val ACTION_SHOW = "com.jev.probe.action.SHOW_ASSISTANT"
         private const val ACTION_WECHAT_NOTIFICATION = "com.jev.probe.action.WECHAT_NOTIFICATION"

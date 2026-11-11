@@ -131,6 +131,17 @@ class MainActivity : AppCompatActivity() {
         container.addView(sectionTitle("常用入口", "把上下文与模型配置分开管理"))
         container.addView(shortcutRow())
 
+        // Optional, user-labelled and memory-only. No new app permissions.
+        container.addView(infoStrip(
+            "最近 20 条对话与个人语气",
+            "点击主动导入并确认收发方向；仅本次运行有效，不读取微信历史。"
+        ).apply {
+            isClickable = true
+            setOnClickListener {
+                startActivity(Intent(this@MainActivity, ManualContextActivity::class.java))
+            }
+        })
+
         if (!prefs.contextEnabled) {
             container.addView(infoStrip(
                 "关联上下文当前关闭",

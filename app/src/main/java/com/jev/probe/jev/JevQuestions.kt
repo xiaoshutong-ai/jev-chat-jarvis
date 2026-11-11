@@ -168,7 +168,7 @@ object JevQuestions {
     }
 
     /**
-     * Build Jev state from a snapshot (last 10 messages), optionally carrying
+     * Build Jev state from a snapshot (up to 20 messages), optionally carrying
      * the D-stage knowledge context.
      *
      * @param background relationship + contact notes + matched knowledge notes.
@@ -185,9 +185,9 @@ object JevQuestions {
         history: List<LogEntry> = emptyList()
     ): JSONObject {
         val msgs = JSONArray()
-        val last10 = snapshot.messages.takeLast(10)
+        val last20 = snapshot.messages.takeLast(20)
         val now = System.currentTimeMillis()
-        for (m in last10) {
+        for (m in last20) {
             val text = m.ts?.takeIf { it > 0L }?.let {
                 HistoryTime.stamp(it, now) + " " + m.text
             } ?: m.text
@@ -196,7 +196,7 @@ object JevQuestions {
         val chat = JSONObject()
             .put("relationship", relationship)
             .put("messages", msgs)
-            .put("latest_from", last10.lastOrNull()?.side ?: "other")
+            .put("latest_from", last20.lastOrNull()?.side ?: "other")
         val state = JSONObject().put("chat", chat)
         val effectiveBackground = buildString {
             if (history.isNotEmpty()) append(HistoryTime.modelGuidance(now))
