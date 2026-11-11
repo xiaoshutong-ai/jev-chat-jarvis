@@ -115,6 +115,15 @@ class Prefs(context: Context, prefsName: String = PREFS_MAIN) {
         get() = sp.getString(K_REPLY_MODEL, DEFAULT_REPLY_MODEL) ?: DEFAULT_REPLY_MODEL
         set(v) = sp.edit().putString(K_REPLY_MODEL, v.trim()).apply()
 
+    /**
+     * User-owned global reply tone prompt. Blank = everyday natural chat.
+     * Stored only in this app's private preferences, not in chat history.
+     * Sent to the chosen reply and ranking providers only on user-authorized analysis.
+     */
+    var replyStylePrompt: String
+        get() = ReplyStylePolicy.normalize(sp.getString(K_REPLY_STYLE, "") ?: "")
+        set(v) = sp.edit().putString(K_REPLY_STYLE, ReplyStylePolicy.normalize(v)).apply()
+
     // --------------------------------------------------------------- vision
 
     /**
@@ -374,6 +383,7 @@ class Prefs(context: Context, prefsName: String = PREFS_MAIN) {
         private const val K_REPLY_KEY = "reply_key"
         private const val K_REPLY_KEY_ENC = "reply_key_enc_v1"
         private const val K_REPLY_MODEL = "reply_model"
+        private const val K_REPLY_STYLE = "reply_style_prompt_v1"
         private const val K_VISION_BASE = "vision_base_url"
         private const val K_VISION_KEY = "vision_key"
         private const val K_VISION_KEY_ENC = "vision_key_enc_v1"

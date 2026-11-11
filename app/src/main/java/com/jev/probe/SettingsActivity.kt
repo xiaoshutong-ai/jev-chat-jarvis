@@ -4,6 +4,7 @@ import android.graphics.Bitmap
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.text.InputFilter
 import android.text.InputType
 import android.util.Log
 import android.util.TypedValue
@@ -21,6 +22,7 @@ import androidx.appcompat.app.AppCompatActivity
 import com.jev.probe.core.ChatSnapshot
 import com.jev.probe.core.Msg
 import com.jev.probe.core.Prefs
+import com.jev.probe.core.ReplyStylePolicy
 import com.jev.probe.session.DesktopBridgeClient
 import com.jev.probe.capture.KeepAliveService
 import com.jev.probe.core.SecuritySelfCheck
@@ -254,6 +256,45 @@ class SettingsActivity : AppCompatActivity() {
             }
         })
         replyCard.addView(replyResult)
+
+        // A persistent global preference, independent of copied chat history.
+        // An empty field always uses the natural human-chat default.
+        replyCard.addView(label("我的回复风格 Prompt（可选）"))
+        replyCard.addView(text(
+            "留空就是普通人微信聊天语气，避免 AI 客服套话、过度防守和不必要的客气。" +
+                "填写后优先使用你自己的说话方式；最近 20 条中的本人样本只作补充。",
+            12f, sub
+        ))
+        val stylePromptEdit = edit(
+            prefs.replyStylePrompt,
+            "例如：像平时跟朋友聊天，短句、直接，偶尔开玩笑，不用客服话术"
+        ).apply {
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_MULTI_LINE
+            minLines = 4
+            maxLines = 8
+            filters = arrayOf(InputFilter.LengthFilter(ReplyStylePolicy.MAX_PROMPT_CHARS))
+            setSaveEnabled(false)
+            importantForAutofill = View.IMPORTANT_FOR_AUTOFILL_NO
+        }
+        replyCard.addView(stylePromptEdit)
+        replyCard.addView(text(
+            "最多 500 字，保存在本机 JEV 设置中；生成候选时（含你另行开启的电脑自动分析）" +
+                "会发给已配置的回复模型和候选排序模型。修改后同一条消息重新生成可能产生费用。",
+            11f, sub
+        ))
+        val styleResult = resultText()
+        replyCard.addView(cardBtn("只保存回复风格") {
+            prefs.replyStylePrompt = stylePromptEdit.text.toString()
+            styleResult.text = if (prefs.replyStylePrompt.isBlank()) {
+                "已保存：普通聊天语气"
+            } else "已保存：自定义回复风格（不会立即调用模型）"
+        })
+        replyCard.addView(cardBtn("恢复默认普通聊天语气") {
+            stylePromptEdit.setText("")
+            prefs.replyStylePrompt = ""
+            styleResult.text = "已恢复普通聊天语气（不会立即调用模型）"
+        })
+        replyCard.addView(styleResult)
         root.addView(replyCard)
 
         // --- 视觉接口 ---
@@ -550,6 +591,7 @@ class SettingsActivity : AppCompatActivity() {
             prefs.replyBaseUrl = replyBaseEdit.text.toString().trim().ifBlank { Prefs.DEFAULT_REPLY_BASE }
             prefs.replyKey = replyKeyEdit.text.toString()
             prefs.replyModel = replyModelEdit.text.toString().trim().ifBlank { Prefs.DEFAULT_REPLY_MODEL }
+            prefs.replyStylePrompt = stylePromptEdit.text.toString()
 
             prefs.visionBaseUrl = visionBaseEdit.text.toString().trim()
             prefs.visionKey = visionKeyEdit.text.toString()

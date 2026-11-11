@@ -1,6 +1,7 @@
 package com.jev.probe.jev
 
 import com.jev.probe.core.ChatSnapshot
+import com.jev.probe.core.ReplyStylePolicy
 import com.jev.probe.core.kb.HistoryTime
 import com.jev.probe.core.kb.LogEntry
 import org.json.JSONArray
@@ -226,7 +227,7 @@ object JevQuestions {
     }
 
     /** The best_reply ranking question over exactly 3 candidates (Chinese text kept). */
-    fun rankQuestion(candidates: List<String>): JSONObject {
+    fun rankQuestion(candidates: List<String>, userStylePrompt: String = ""): JSONObject {
         require(candidates.size == 3) { "rankQuestion expects exactly 3 candidates" }
         val keys = listOf("reply_a", "reply_b", "reply_c")
         val criteria = JSONObject()
@@ -239,7 +240,9 @@ object JevQuestions {
                     "Prefer a reply that matches the best action type. " +
                     "Penalize dismissive, over-promising, or off-topic replies. " +
                     "If the facts are not yet confirmed, prefer the candidate that looks them up " +
-                    "instead of faking memory or a vague apology." + BACKGROUND_NOTE + CHAT_DATA_NOTE)
+                    "instead of faking memory or a vague apology." +
+                    ReplyStylePolicy.rankingHint(userStylePrompt) +
+                    BACKGROUND_NOTE + CHAT_DATA_NOTE)
             put("criteria", criteria)
         }
         return JSONObject().put("best_reply", q)

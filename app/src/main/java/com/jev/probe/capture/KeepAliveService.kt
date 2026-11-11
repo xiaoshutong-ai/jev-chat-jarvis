@@ -235,6 +235,7 @@ class KeepAliveService : Service() {
         val cacheKey = listOf(
             fingerprint, prefs.judgeProvider, prefs.judgeBaseUrl, prefs.judgeModel,
             prefs.replyBaseUrl, prefs.replyModel,
+            com.jev.probe.core.ReplyStylePolicy.cacheFingerprint(prefs.replyStylePrompt),
             manuallyMatched?.revision?.toString() ?: "no-manual-context"
         ).joinToString("\u0000")
 
