@@ -344,9 +344,10 @@ class OverlayController(private val ctx: Context) {
         onAnalyzeClipboard?.let {
             menu.addView(menuItem("分析已复制的消息") { root?.removeView(menu); it.invoke() })
         }
-        onOcrCapture?.let {
-            menu.addView(menuItem("本地截屏识别（可选）") { root?.removeView(menu); it.invoke() })
-        }
+        menu.addView(menuItem(screenshotEntryLabel()) {
+            root?.removeView(menu)
+            captureScreenOrOpenSetup()
+        })
         onSaveContact?.let {
             menu.addView(menuItem("把当前会话存为联系人") { it.invoke(); root?.removeView(menu) })
         }
@@ -367,6 +368,29 @@ class OverlayController(private val ctx: Context) {
                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
         }
         if (expanded) toggle()
+    }
+
+    /** Keep screenshot OCR discoverable even before the optional service is enabled. */
+    private fun screenshotEntryLabel(): String =
+        if (onOcrCapture != null) "截取当前屏幕识字"
+        else "截图识字（先开启无障碍）"
+
+    /** Never capture without the user tap and a connected screenshot service. */
+    private fun captureScreenOrOpenSetup() {
+        val capture = onOcrCapture
+        if (capture != null) {
+            capture.invoke()
+            return
+        }
+        toast("请在知言首页启用无障碍权限，再返回聊天长按悬浮球")
+        runCatching {
+            ctx.startActivity(
+                Intent().setClassName(ctx, "com.jev.probe.MainActivity")
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+            )
+        }.onFailure {
+            showError("截图识字需要知言无障碍权限。请打开知言首页启用后重试。")
+        }
     }
 
     private var collapsedX = dp(6)
@@ -460,9 +484,9 @@ class OverlayController(private val ctx: Context) {
         onAnalyzeClipboard?.let { action ->
             views.add(bigButton("分析刚复制的消息") { action.invoke() })
         }
-        onOcrCapture?.let { action ->
-            views.add(secondaryButton("截图识字（可选）") { action.invoke() })
-        }
+        views.add(secondaryButton(screenshotEntryLabel()) {
+            captureScreenOrOpenSetup()
+        })
         if (previous != null) {
             views.add(secondaryButton("查看上次分析结果") {
                 noteText = "上次分析结果 · 切换会话后请勿直接沿用"
@@ -489,9 +513,9 @@ class OverlayController(private val ctx: Context) {
         onAnalyzeClipboard?.let { action ->
             views.add(bigButton("分析刚复制的消息") { action.invoke() })
         }
-        onOcrCapture?.let { action ->
-            views.add(secondaryButton("截图识字") { action.invoke() })
-        }
+        views.add(secondaryButton(screenshotEntryLabel()) {
+            captureScreenOrOpenSetup()
+        })
         setContent(views)
     }
 
@@ -509,9 +533,9 @@ class OverlayController(private val ctx: Context) {
         onAnalyzeClipboard?.let { action ->
             views.add(bigButton("分析刚复制的消息") { action.invoke() })
         }
-        onOcrCapture?.let { action ->
-            views.add(secondaryButton("截图识字（可选）") { action.invoke() })
-        }
+        views.add(secondaryButton(screenshotEntryLabel()) {
+            captureScreenOrOpenSetup()
+        })
         setContent(views)
     }
 
