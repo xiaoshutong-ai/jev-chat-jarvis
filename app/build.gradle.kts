@@ -7,23 +7,22 @@ plugins {
     id("org.jetbrains.kotlin.android")
 }
 
-// Release signing: reads a properties file kept OUTSIDE the repo
-// (storeFile / storePassword / keyAlias / keyPassword). JEV_KEYSTORE_PROPS wins.
-// The legacy H: fallback is Windows-only; asking Gradle's Linux file resolver to
-// parse "H:/..." fails during configuration before a debug build can even start.
+// The Xiaoshutong Zhiyan release key is independent of the upstream JEV key.
+// Opt in explicitly with an OUT-OF-REPOSITORY properties file. Never silently
+// fall back to a previous application's signing certificate.
 val releasePropsPath = System.getenv("JEV_KEYSTORE_PROPS")
     ?.trim()
     ?.takeIf { it.isNotEmpty() }
-    ?: if (System.getProperty("os.name").contains("Windows", ignoreCase = true)) {
-        "H:/android/keys/jev-release.properties"
-    } else {
-        null
-    }
 
 val releaseProps = Properties().apply {
     releasePropsPath?.let { path ->
         val f = File(path)
-        if (f.exists()) FileInputStream(f).use { load(it) }
+        require(f.isFile) { "JEV_KEYSTORE_PROPS does not reference a file" }
+        FileInputStream(f).use { load(it) }
+        val requiredFields = setOf("storeFile", "storePassword", "keyAlias", "keyPassword")
+        require(requiredFields.all { !getProperty(it).isNullOrBlank() }) {
+            "JEV_KEYSTORE_PROPS lacks required signing fields"
+        }
     }
 }
 
@@ -36,11 +35,11 @@ android {
     compileSdk = 36
 
     defaultConfig {
-        applicationId = "com.jev.probe"
+        applicationId = "com.xiaoshutong.zhiyan"
         minSdk = 30
         targetSdk = 36
-        versionCode = 4
-        versionName = "1.3"
+        versionCode = 1
+        versionName = "1.0.0"
 
         // Native ABI is selected per build type. Regular phone builds remain
         // arm64-only; an explicit test-only property supports the already
