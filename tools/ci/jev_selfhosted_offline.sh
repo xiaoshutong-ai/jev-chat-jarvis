@@ -48,7 +48,7 @@ git archive --format=tar "$actual" | docker run --rm -i --pull never --network n
     test -s "$apk"
     sha256sum "$apk"
     badging="$(/opt/android-sdk/build-tools/35.0.0/aapt dump badging "$apk")"
-    printf "%s\n" "$badging" | grep -F "package: name=" | grep -F "com.jev.probe.guofeng"
+    printf "%s\n" "$badging" | grep -F "package: name=" | grep -F "com.xiaoshutong.zhiyan.guofeng"
     printf "%s\n" "$badging" | grep -F "application-label:" | grep -F "小书童·知言"
     printf "%s\n" "$badging" | grep -F "targetSdkVersion:" | grep -F "36"
     printf "%s\n" "$badging" | grep -F "compileSdkVersion=" | grep -F "36"
