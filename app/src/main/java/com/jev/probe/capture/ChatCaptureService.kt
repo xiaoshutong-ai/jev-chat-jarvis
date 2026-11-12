@@ -477,6 +477,16 @@ open class ChatCaptureService : AccessibilityService() {
 
         analyzing = true
         main.post { overlay?.showLoading(); overlay?.setNote(snapshot.note) }
+        // A stale callback or an unresponsive provider must not leave the UI
+        // indefinitely in the loading state. Late results are rejected by epoch.
+        main.postDelayed({
+            if (session.epoch == analysisEpoch && analyzing) {
+                invalidateAnalysis()
+                overlay?.showError(
+                    "分析超过 60 秒，已停止等待结果。模型请求可能仍在处理，请先检查接口状态，避免立即重复计费。"
+                )
+            }
+        }, ANALYSIS_UI_TIMEOUT_MS)
         val client = JevClient(prefs)
 
         // Both network branches are concurrent, but publishing is coordinated on
@@ -1139,7 +1149,14 @@ open class ChatCaptureService : AccessibilityService() {
         }
         if (!prefs.isAllowed(snapshot.title)) { overlay?.hide(); return }
 
-        if (pkg.isNotEmpty() && pkg != activePkg) { activePkg = pkg; lastSignature = "" }
+        // Manual full-screen OCR has an explicit source even when unknown ("").
+        // Do not infer its identity from rootInActiveWindow on the next step:
+        // that would mismatch the active source and silently discard both callbacks.
+        val scopedPkg = OcrAnalysisScope.nextActivePackage(activePkg, pkg, manual)
+        if (scopedPkg != activePkg) {
+            activePkg = scopedPkg
+            lastSignature = ""
+        }
         currentSnapshot = snapshot
         val sig = snapshot.signature()
         // Manual taps always re-run; the automatic path dedupes like the tree path.
@@ -1193,6 +1210,7 @@ open class ChatCaptureService : AccessibilityService() {
     companion object {
         private const val TAG = "JEVASSIST"
         private const val WECHAT_PKG = "com.tencent.mm"
+        private const val ANALYSIS_UI_TIMEOUT_MS = 60_000L
 
         /** Whole-screen OCR keeps the middle: no action bar, no input area. */
         private const val TOP_CROP = 0.12f
