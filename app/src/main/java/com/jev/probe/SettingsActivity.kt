@@ -660,8 +660,28 @@ class SettingsActivity : AppCompatActivity() {
             if (prefs.enabled) KeepAliveService.start(this)
         })
 
-        // Low-key attribution; no model calls, new permissions, or UI automation.
+        // Public privacy policy remains readable offline, including on devices
+        // that cannot access GitHub or a browser. No extra permissions or network.
         root.addView(section("关于"))
+        val privacyCard = card()
+        privacyCard.addView(cardTitle("隐私政策与联系"))
+        privacyCard.addView(text("发行品牌：小书童 · 联系邮箱：xiaoshutong2026@foxmail.com", 12f, sub))
+        privacyCard.addView(cardBtn("查看隐私政策") {
+            val policy = runCatching {
+                assets.open("privacy_policy_zhiyan_cn.md")
+                    .bufferedReader(Charsets.UTF_8).use { it.readText() }
+            }.getOrElse {
+                "隐私政策暂不可读取，请联系 xiaoshutong2026@foxmail.com。"
+            }
+            val readable = policy.replace(Regex("(?m)^#{1,3} +"), "")
+                .replace("**", "").replace("`", "")
+            androidx.appcompat.app.AlertDialog.Builder(this)
+                .setTitle("小书童·知言隐私政策")
+                .setMessage(readable)
+                .setPositiveButton("关闭", null)
+                .show()
+        })
+        root.addView(privacyCard)
         val licenseCard = card()
         licenseCard.addView(text(
             "本应用基于 Jev Chat Assistant 开源项目二次开发。原项目为 MIT 许可。",

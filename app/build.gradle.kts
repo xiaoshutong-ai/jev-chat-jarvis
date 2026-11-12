@@ -38,7 +38,7 @@ android {
         applicationId = "com.xiaoshutong.zhiyan"
         minSdk = 30
         targetSdk = 36
-        versionCode = 3
+        versionCode = 4
         versionName = "1.0.2"
 
         // Native ABI is selected per build type. Regular phone builds remain
