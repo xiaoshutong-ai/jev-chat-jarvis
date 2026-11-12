@@ -47,7 +47,3 @@
 对外发行品牌：小书童
 隐私咨询与权利请求：xiaoshutong2026@foxmail.com
 公开政策网址：https://github.com/xiaoshutong-ai/jev-chat-jarvis/blob/feature/hardening-v1/docs/PRIVACY_POLICY_ZHIYAN_CN.md
-
-本稿包含待填项目，**不是已生效的公开隐私政策，也不代表已经完成商用发布合规**。
-
-[executed on device: 5070TI-JAY (a421e69e-ab52-4b9b-b023-6b360682cb6b)]
