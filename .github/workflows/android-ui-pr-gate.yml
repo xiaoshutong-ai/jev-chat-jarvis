@@ -1,0 +1,68 @@
+name: Android UI PR Gate
+
+on:
+  pull_request:
+    branches:
+      - feature/hardening-v1
+    paths:
+      - "app/**"
+      - "build.gradle.kts"
+      - "settings.gradle.kts"
+      - "gradle.properties"
+      - "gradle/**"
+      - "tools/ci/jev_selfhosted_offline.sh"
+      - ".github/workflows/android-ui-pr-gate.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: android-ui-pr-gate-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Cached Linux Android source verification
+    # No untrusted fork PR code on a self-hosted runner.
+    if: ${{ github.event_name == 'workflow_dispatch' || (github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.head.ref == 'feature/guofeng-ui') }}
+    runs-on: [self-hosted, Linux, X64, jev-chat-jarvis, android, wsl2]
+    timeout-minutes: 20
+    steps:
+      - name: Checkout exact source
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+
+      - name: WeChat safety architecture guard
+        shell: bash
+        run: |
+          set -euo pipefail
+          test ! -e app/src/main/java/com/google/android/accessibility/selecttospeak/SelectToSpeakService.kt
+          test ! -e app/src/main/res/xml/config_disguised.xml
+          grep -F 'android:name=".capture.ChatCaptureService"' app/src/main/AndroidManifest.xml
+          grep -F 'android:isAccessibilityTool="false"' app/src/main/res/xml/config_accessibility.xml
+          if grep -F 'com.tencent.mm' app/src/main/res/xml/config_accessibility.xml; then
+            echo "WeChat must not subscribe through AccessibilityService packageNames" >&2
+            exit 1
+          fi
+          BANNED='SelectToSpeakService|ManualWeChatVisibleText|class WeChatAdapter|com\.tencent\.mm:id/|ACTION_SET_TEXT|ACTION_PASTE|ACTION_CLICK|dispatchGesture|Xposed|LSPosed|Frida|Magisk'
+          if grep -R -n -E "$BANNED" app/src/main/java app/src/main/res/xml; then
+            echo "Banned WeChat-evasion/UI-automation mechanism found" >&2
+            exit 1
+          fi
+          IME_READ_BANNED='getTextBeforeCursor|getTextAfterCursor|getSelectedText|getExtractedText|performEditorAction|sendKeyEvent|deleteSurroundingText'
+          if grep -R -n -E "$IME_READ_BANNED" app/src/main/java/com/jev/probe/ime; then
+            echo "Zhiyan IME must remain write-only" >&2
+            exit 1
+          fi
+
+      - name: Offline Linux unit tests and APK (cached toolchains)
+        shell: bash
+        env:
+          EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: bash tools/ci/jev_selfhosted_offline.sh
+
+      # Do not upload APK automatically. Note9 uses separately signed,
+      # independently verified debug acceptance builds.

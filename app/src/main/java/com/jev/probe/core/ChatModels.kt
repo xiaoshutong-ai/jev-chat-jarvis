@@ -2,8 +2,8 @@ package com.jev.probe.core
 
 import android.graphics.Rect
 
-/** One captured chat bubble. side is "me" (right) or "other" (left). */
-data class Msg(val side: String, val text: String)
+/** One captured message. [ts] is an optional source/capture time in epoch ms. */
+data class Msg(val side: String, val text: String, val ts: Long? = null)
 
 /**
  * A bubble the node tree can locate but not read (Feishu draws its message text
@@ -28,7 +28,9 @@ data class ChatSnapshot(
     val title: String?,
     val messages: List<Msg>,
     val bubbleRects: List<BubbleRect> = emptyList(),
-    val note: String? = null
+    val note: String? = null,
+    /** Optional user-labelled authentic outgoing examples; never AI candidates. */
+    val styleExamples: List<String> = emptyList()
 ) {
     val latestFrom: String? get() = messages.lastOrNull()?.side
 
@@ -46,6 +48,8 @@ data class ChatSnapshot(
             append(it.side)
             append('\u0000')
             append(it.text)
+            append('\u0000')
+            append(it.ts ?: 0L)
             append('\u0002')
         }
     }

@@ -1,3 +1,4 @@
+import java.io.File
 import java.io.FileInputStream
 import java.util.Properties
 
@@ -7,30 +8,44 @@ plugins {
 }
 
 // Release signing: reads a properties file kept OUTSIDE the repo
-// (storeFile / storePassword / keyAlias / keyPassword). Override the path with
-// the JEV_KEYSTORE_PROPS env var. Without it, release builds are unsigned.
+// (storeFile / storePassword / keyAlias / keyPassword). JEV_KEYSTORE_PROPS wins.
+// The legacy H: fallback is Windows-only; asking Gradle's Linux file resolver to
+// parse "H:/..." fails during configuration before a debug build can even start.
+val releasePropsPath = System.getenv("JEV_KEYSTORE_PROPS")
+    ?.trim()
+    ?.takeIf { it.isNotEmpty() }
+    ?: if (System.getProperty("os.name").contains("Windows", ignoreCase = true)) {
+        "H:/android/keys/jev-release.properties"
+    } else {
+        null
+    }
+
 val releaseProps = Properties().apply {
-    val f = file(System.getenv("JEV_KEYSTORE_PROPS") ?: "H:/android/keys/jev-release.properties")
-    if (f.exists()) FileInputStream(f).use { load(it) }
+    releasePropsPath?.let { path ->
+        val f = File(path)
+        if (f.exists()) FileInputStream(f).use { load(it) }
+    }
 }
+
+// Explicit opt-in for an x86_64 emulator test build; normal Debug/Release
+// continue to package only arm64-v8a, preserving the installed phone baseline.
+val debugEmulatorAbi = providers.gradleProperty("jevEmulatorAbi").orNull == "x86_64"
 
 android {
     namespace = "com.jev.probe"
-    compileSdk = 35
+    compileSdk = 36
 
     defaultConfig {
         applicationId = "com.jev.probe"
         minSdk = 30
-        targetSdk = 35
+        targetSdk = 36
         versionCode = 4
         versionName = "1.3"
 
-        // ML Kit's bundled Chinese recognizer ships native libs for every ABI.
-        // The target phone (and every phone this can run on: minSdk 30) is
-        // arm64, so keep only that one — the other three are dead weight.
-        ndk {
-            abiFilters += listOf("arm64-v8a")
-        }
+        // Native ABI is selected per build type. Regular phone builds remain
+        // arm64-only; an explicit test-only property supports the already
+        // installed x86_64 Android emulator, with no extra system image.
+
     }
 
     signingConfigs {
@@ -45,7 +60,19 @@ android {
     }
 
     buildTypes {
+        debug {
+            // Acceptance builds install beside the upstream release instead of
+            // requiring an uninstall that would wipe API keys and local history.
+            applicationIdSuffix = ".guofeng"
+            versionNameSuffix = "-guofeng-debug"
+            ndk {
+                abiFilters += if (debugEmulatorAbi) listOf("x86_64") else listOf("arm64-v8a")
+            }
+        }
         release {
+            ndk {
+                abiFilters += listOf("arm64-v8a")
+            }
             isMinifyEnabled = false
             signingConfig = signingConfigs.findByName("release")
         }
@@ -78,4 +105,7 @@ dependencies {
     // On-device OCR. The *bundled* Chinese model (not the play-services variant):
     // it works on phones with no Google Play services and needs no model download.
     implementation("com.google.mlkit:text-recognition-chinese:16.0.1")
+    testImplementation("junit:junit:4.13.2")
+    // Real JVM JSONObject for local unit tests; android.jar provides only throwing stubs.
+    testImplementation("org.json:json:20240303")
 }
