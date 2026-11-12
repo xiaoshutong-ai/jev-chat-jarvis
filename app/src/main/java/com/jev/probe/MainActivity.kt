@@ -78,7 +78,7 @@ class MainActivity : AppCompatActivity() {
 
         container.addView(readinessCard(ready, notifications, overlay, key))
 
-        container.addView(sectionTitle("启用准备", "复制消息后，点悬浮球获取回复建议"))
+        container.addView(sectionTitle("启用准备", "复制分析点悬浮球；截图识字长按悬浮球（需无障碍权限）"))
         container.addView(permissionCard(
             mark = "浮",
             title = "悬浮窗权限",
